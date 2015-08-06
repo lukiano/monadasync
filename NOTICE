@@ -1,0 +1,16 @@
+Atlassian Kadai
+Copyright 2012 Atlassian PTY LTD
+
+This product includes software developed at
+Atlassian PTY LTD (http://www.atlassian.com/).
+
+This software depends on the following library packages,
+
+Shapeless: An exploration of generic/polytypic programming in Scala
+Created by Miles Sabin, available at https://github.com/milessabin/shapeless
+
+Scalaz: Type Classes and Pure Functional Data Structures for Scala
+Available at http://code.google.com/p/scalaz/
+
+Specs2: specs2 is a library for writing executable software specifications.
+Avalable at http://etorreborre.github.com/specs2/
