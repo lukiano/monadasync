@@ -25,8 +25,14 @@ trait MonadAsync[F[_]] {
   /**
    * @return an F whose value will be computed when called, on the caller thread.
    */
-  def suspend[A](a: => A): F[A] =
+  def delay[A](a: => A): F[A] =
     Monad[F].point(a)
+
+  /**
+   * @return an F[A] wrapped in a suspension to be computed when called, on the caller thread.
+   */
+  def suspend[A](fa: => F[A]): F[A] =
+    delay(()) >> fa
 
   /**
    * @return an F whose value will be computed when called, in a thread within the given pool.
@@ -79,8 +85,8 @@ trait MonadAsync[F[_]] {
    * TODO include nondeterminism
    */
   trait MonadAsyncLaw {
-    def asyncIsSuspend[A](a: () => A)(implicit FEA: Equal[F[A]]): Boolean =
-      FEA.equal(suspend(a()), async(a())(MonadAsync.SameThreadExecutor))
+    def asyncIsDelay[A](a: () => A)(implicit FEA: Equal[F[A]]): Boolean =
+      FEA.equal(delay(a()), async(a())(MonadAsync.SameThreadExecutor))
     def bindAIsBind[A, B](a: A, f: A => F[A], b: A => F[B])(implicit FEA: Equal[F[B]]): Boolean =
       FEA.equal(f(a) >>= b, bindA(f(a))(b)(MonadAsync.SameThreadExecutor))
     def mapAIsMap[A, B](a: A, f: A => F[A], b: A => B)(implicit FEA: Equal[F[B]]): Boolean =

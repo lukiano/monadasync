@@ -34,12 +34,12 @@ object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
 
       (for {
         _ <- now(enqueue(1))
-        _ <- suspend(enqueue(2))
+        _ <- delay(enqueue(2))
         _ <- fork(now(enqueue(3)))(es)
-        _ <- suspend(enqueue(4))
+        _ <- delay(enqueue(4))
         _ <- fork(now(enqueue(5)))(es)
         _ <- now(enqueue(6))
-        _ <- fork(suspend(enqueue(7)))(es)
+        _ <- fork(delay(enqueue(7)))(es)
 
       } yield ()).runAsync(_ => {
         enqueue(8)
@@ -64,7 +64,7 @@ object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
     }
 
     "complete even when interrupted" in {
-      val t = fork(suspend(Thread.sleep(3000)))
+      val t = fork(delay(Thread.sleep(3000)))
       val sync = new SyncVar[Throwable \/ Unit]
       val interrupt = t.runAsyncInterruptibly(sync.put)
       Thread.sleep(1000)

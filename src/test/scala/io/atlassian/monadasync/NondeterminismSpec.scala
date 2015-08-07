@@ -16,7 +16,7 @@ object NondeterminismSpec extends org.specs2.mutable.SpecificationWithJUnit with
 
     "correctly process reduceUnordered for >1 futures in non-blocking way" in {
       val f1 = fork(now(1))
-      val f2 = bind(suspend(7)) { _ => fork(now(2)) }
+      val f2 = bind(delay(7)) { _ => fork(now(2)) }
       val f3 = fork(now(3))
 
       val f = fork(reduceUnordered(Seq(f1, f2, f3))(intSetReducer))
