@@ -36,7 +36,7 @@ object RetrySpec extends org.specs2.mutable.SpecificationWithJUnit with ScalaChe
 
      var x = 0
      val errorMessage = "can be repeated"
-     val f: TC[Unit] = MonadAsync[TC].suspend { x += 1 } >>= { _ => C.fail(new Exception(errorMessage)) }
+     val f: TC[Unit] = MonadAsync[TC].delay { x += 1 } >>= { _ => C.fail(new Exception(errorMessage)) }
 
      val withRetries: TC[Unit] = f.retry(xs.map(_ => 0.milliseconds), { _.getMessage == errorMessage })
      run(withRetries)
