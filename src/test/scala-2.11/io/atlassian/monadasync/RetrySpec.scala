@@ -9,8 +9,6 @@ import scalaz.std.anyVal._
 
 object RetrySpec extends org.specs2.mutable.SpecificationWithJUnit with ScalaCheck {
 
-  implicit val pool = DefaultExecutor
-
   type Failure = String
   type EitherFixed[A] = EitherT[Future, Failure, A]
   type TC[A] = WriterT[EitherFixed, Int, A]

@@ -19,7 +19,7 @@ object Retry {
      * left sides into a list.
      * A retriable failure is one for which the predicate `p` returns `true`.
      */
-    def retryAccumulating(delays: Seq[Duration], p: L => Boolean)(implicit pool: Executor): F[(A, List[L])] =
+    def retryAccumulating(delays: Seq[Duration], p: L => Boolean): F[(A, List[L])] =
       retryInternal(delays, p, accumulateErrors = true)
 
     /**
@@ -27,7 +27,7 @@ object Retry {
      * each retry delayed by the corresponding duration.
      * A retriable failure is one for which the predicate `p` returns `true`.
      */
-    def retry(delays: Seq[Duration], p: L => Boolean)(implicit pool: Executor): F[A] =
+    def retry(delays: Seq[Duration], p: L => Boolean): F[A] =
       retryInternal(delays, p, accumulateErrors = false) map { _._1 }
 
     protected def retryLogic(f: F[(A, List[L])],
@@ -50,8 +50,8 @@ object Retry {
 
     private def retryInternal(delays: Seq[Duration],
                               p: L => Boolean,
-                              accumulateErrors: Boolean)(implicit pool: Executor): F[(A, List[L])] =
-      loop(delays, Stream(), p, accumulateErrors).fork
+                              accumulateErrors: Boolean): F[(A, List[L])] =
+      loop(delays, Stream(), p, accumulateErrors)
   }
 
   object monadError {

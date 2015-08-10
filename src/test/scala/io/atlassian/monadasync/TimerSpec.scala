@@ -9,7 +9,7 @@ object TimerSpec extends org.specs2.mutable.SpecificationWithJUnit {
   import MonadAsync.FutureMonadAsync
 
   def withTimer[T](expression: Timer => T): T = {
-    val timer = new Timer(10)
+    val timer = Timer(10)
     try {
       expression(timer)
     } finally {
@@ -46,7 +46,7 @@ object TimerSpec extends org.specs2.mutable.SpecificationWithJUnit {
     }
     "produces the result of the Future if the timeout is not exceeded" in {
       withTimer { timer =>
-        val future = timer.withTimeout(Future { Thread.sleep(50); "Test" }, 200)
+        val future = timer.withTimeout(Future { Thread.sleep(100); "Test" }, 500)
         WithTimeout(5000) {
           future.run must_== "Test".right
         }
