@@ -32,7 +32,7 @@ trait MonadAsync[F[_]] {
    * @return an F[A] wrapped in a suspension to be computed when called, on the caller thread.
    */
   def suspend[A](fa: => F[A]): F[A] =
-    delay(()) >> fa
+    now(()) >> fa
 
   /**
    * @return an F whose value will be computed when called, in a thread within the given pool.
@@ -95,7 +95,7 @@ trait MonadAsync[F[_]] {
   def monadAsyncLaw = new MonadAsyncLaw {}
 }
 
-object MonadAsync extends MonadAsyncFunctions with MonadAsyncInstances {
+object MonadAsync extends MonadAsyncInstances {
   def apply[F[_]: MonadAsync] = implicitly[MonadAsync[F]]
 
   trait MonadAsyncSyntax[F[_]] {
@@ -110,7 +110,7 @@ object MonadAsync extends MonadAsyncFunctions with MonadAsyncInstances {
     def execute(command: Runnable) = command.run()
   }
 
-  object syntax {
+  object syntax extends MonadAsyncFunctions {
     implicit def ToMonadAsyncOps[F[_], A](v: F[A])(implicit MA: MonadAsync[F]) =
       new MonadAsyncOps[F, A](v)
 
@@ -193,14 +193,16 @@ trait MonadAsyncFunctions {
   def schedule[F[_], A](delay: Duration)(a: => A)(implicit MA: MonadAsync[F], pool: ScheduledExecutorService): F[A] =
     MA.schedule(a, delay)
 
-  def tryCatch[F[_]: Monad: Catchable, A](a: => A): F[A] = {
+  def tryCatch[F[_]: Monad: Catchable, A](a: => A): F[A] =
     Task.Try(a).point[F].unattempt
-  }
 
   def asyncCatch[F[_], A](a: => A)(implicit MA: MonadAsync[F], C: Catchable[F], pool: Executor): F[A] = {
     implicit val M = MA.monad
     MA.async(Task.Try(a)).unattempt
   }
+
+  def suspend[F[_], A](fa: => F[A])(implicit MA: MonadAsync[F]): F[A] =
+    MA.suspend(fa)
 }
 
 trait MonadAsyncInstances {
