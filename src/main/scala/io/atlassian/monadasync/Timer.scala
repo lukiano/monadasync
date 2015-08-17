@@ -7,10 +7,6 @@ import io.atlassian.monadasync.MonadAsync.syntax._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
-import scala.concurrent.duration.Duration
-import scalaz.syntax.either._
-import scalaz.syntax.monad._
-import scalaz.{ Nondeterminism, \/ }
 
 // Same as scalaz.concurrent.Timer, but applies to any MonadAsync
 case class Timer(timeoutTickMs: Long = 100, workerName: String = "TimeoutContextWorker") {
@@ -97,12 +93,6 @@ case class Timer(timeoutTickMs: Long = 100, workerName: String = "TimeoutContext
         value.now[F]
       }
     }
-
-  def withTimeout[F[_]: MonadAsync: Nondeterminism, A](f: F[A], timeout: Long): F[Timeout \/ A] =
-    Nondeterminism[F].choose(valueWait(Timeout(), timeout), f) map (_.bimap(_._1, _._2))
-
-  def withTimeout[F[_]: MonadAsync: Nondeterminism, A](f: F[A], timeout: Duration): F[Timeout \/ A] =
-    withTimeout(f, timeout.toMillis)
 }
 
 object Timer {

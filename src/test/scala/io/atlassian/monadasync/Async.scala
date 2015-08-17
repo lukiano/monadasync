@@ -1,21 +1,17 @@
 package io.atlassian.monadasync
 
-import scalaz._
-import scalaz.std.anyVal._
-import scalaz.concurrent.Future
+import cats.data.XorT
+import cats.state.StateT
+import cats.syntax.functor._
 import Future._
 import MonadAsync._
-import Nondeterminisms._
 
 trait Async {
-  type EitherFixed[A] = EitherT[Future, Throwable, A]
-  type WriterFixed[A] = WriterT[EitherFixed, Int, A]
-  type TC[A] = ReaderT[WriterFixed, Unit, A]
+  type EitherFixed[A] = XorT[Future, Throwable, A]
+  type TC[A] = StateT[EitherFixed, Int, A]
 
   def run[A](f: TC[A]): A =
-    f.run(()).value.run.run.toOption.get
+    f.runA(0).value.map(_.toOption).run.get
 
   val MonadAsyncF = MonadAsync[TC]
-
-  val NondeterminismF = Nondeterminism[TC]
 }

@@ -1,12 +1,10 @@
 package io.atlassian.monadasync
 
-import java.util.concurrent.Executor
-
 import io.atlassian.monadasync.MonadAsync.syntax._
 
 import scala.concurrent.duration.Duration
-import scalaz._
-import scalaz.syntax.monad._
+import cats._
+import cats.syntax.functor._
 
 object Retry {
 
@@ -70,26 +68,6 @@ object Retry {
               ME.raiseError(e)
             }
           }
-      }
-  }
-
-  object catchable {
-    implicit def ToRetryOps[F[_]: MonadAsync: Catchable, A](self: F[A]) =
-      new RetryOps[F, Throwable, A](self) {
-        import scalaz.syntax.catchable._
-        protected override def retryLogic(f: F[(A, List[Throwable])],
-                                          t: Duration,
-                                          ts: Seq[Duration],
-                                          es: => Stream[Throwable],
-                                          p: Throwable => Boolean,
-                                          accumulateErrors: Boolean): F[(A, List[Throwable])] =
-          f.attempt.flatMap {
-            case \/-(v) => v.point[F]
-            case -\/(e) if p(e) =>
-              loop(ts, e #:: es, p, accumulateErrors) after t
-            case -\/(e) => Catchable[F].fail(e)
-          }
-
       }
   }
 }

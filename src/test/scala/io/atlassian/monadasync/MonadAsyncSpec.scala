@@ -1,25 +1,20 @@
 package io.atlassian.monadasync
 
+import cats.Eq
+import cats.laws.discipline._
 import org.scalacheck.Prop._
-import org.scalacheck.{ Arbitrary, Prop, Properties }
-import org.specs2.scalaz.Spec
+import org.scalacheck.{ Arbitrary, Prop }
+import org.typelevel.discipline.Laws
+import org.typelevel.discipline.specs2.mutable.Discipline
 
-import scalaz._
-
-object MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec with Async {
+object MonadAsyncSpec extends org.specs2.mutable.SpecificationWithJUnit with Discipline with Async {
 
   import MonadAsyncF._
-  import NondeterminismF._
+  import cats.std.int._
 
   implicit val pool = DefaultExecutor
 
   "MonadAsync" should {
-    "not deadlock when using Nondeterminism#chooseAny" in {
-      WithTimeout(2000) {
-        run(deadlocks(3)).length must_== 4
-      }
-    }
-
     "have a run method that returns" >> {
       "when constructed from MonadAsync.now" in Prop.forAll { (n: Int) =>
         run(now(n)) must_== n
@@ -40,76 +35,47 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec with As
     }
   }
 
-  "Timed MonadAsync" should {
-    "not run sequentially" in {
-      val times = Stream.iterate(100l)(_ + 100).take(10)
+  implicit def EqualTC[A](implicit e: Eq[A]): Eq[TC[A]] =
+    new Eq[TC[A]] {
+      override def eqv(tc1: MonadAsyncSpec.TC[A], tc2: MonadAsyncSpec.TC[A]): Boolean = e.eqv(run(tc1), run(tc2))
+    }
 
-      val start = System.currentTimeMillis()
-      val result = run(fork(gatherUnordered(times.map { time =>
-        fork {
-          Thread.sleep(time)
-          now(time)
-        }
-      })))
-      val duration = System.currentTimeMillis() - start
-      (result.length must_== times.size) and (duration must be_<(times.sum))
+  implicit val ArbitraryTC: ArbitraryK[TC] = new ArbitraryK[TC] {
+    def synthesize[A: Arbitrary]: Arbitrary[TC[A]] = Arbitrary {
+      Arbitrary.arbitrary[A] map MonadAsyncF.now
     }
   }
 
-  def deadlocks(depth: Int): TC[List[Long]] =
-    if (depth == 1)
-      fork(
-        delay {
-          Thread.sleep(20)
-          List(System.currentTimeMillis)
-        }
-      )
-    else
-      fork(
-        NondeterminismF.map(both(deadlocks(depth - 1), deadlocks(depth - 1))) {
-          case (l, r) => l ++ r
-        }
-      )
-
-  implicit val MonadAsyncTF = MonadAsyncF
-
-  implicit def ArbitraryTC[A](implicit a: Arbitrary[A]): Arbitrary[TC[A]] = Arbitrary {
-    a.arbitrary map MonadAsyncF.now
-  }
-
-  implicit def ArbitraryF0[A](implicit a: Arbitrary[A]): Arbitrary[() => A] = Arbitrary {
-    a.arbitrary map { a => () => a }
-  }
-
-  import scalaz.std.anyVal._
-
-  implicit def EqualTc[A](implicit e: Equal[A]): Equal[TC[A]] =
-    new Equal[TC[A]] {
-      override def equal(tc1: MonadAsyncSpec.TC[A], tc2: MonadAsyncSpec.TC[A]): Boolean = e.equal(run(tc1), run(tc2))
-    }
-
-  checkAll("AwsActionMonad Monad laws", MonadAsyncProperties.monadAsync.laws[TC])
-
+  checkAll("AwsActionMonad Monad laws", MonadAsyncTests[TC](MonadAsyncF).monadAsync[Int, Int, Int])
 }
 
-object MonadAsyncProperties {
+trait MonadAsyncTests[F[_]] extends Laws {
 
-  object monadAsync {
-    def asyncIsDelay[F[_], A](implicit ma: MonadAsync[F], eq: Equal[F[A]], a0: Arbitrary[() => A]) =
-      forAll(ma.monadAsyncLaw.asyncIsDelay[A] _)
-    def bindAIsBind[F[_], A, B](implicit ma: MonadAsync[F], eq: Equal[F[B]], a: Arbitrary[A], afa: Arbitrary[A => F[A]], afb: Arbitrary[A => F[B]]) =
-      forAll(ma.monadAsyncLaw.bindAIsBind[A, B] _)
-    def mapAIsMap[F[_], A, B](implicit ma: MonadAsync[F], eq: Equal[F[B]], a: Arbitrary[A], afa: Arbitrary[A => F[A]], ab: Arbitrary[A => B]) =
-      forAll(ma.monadAsyncLaw.mapAIsMap[A, B] _)
+  private implicit def arbFunction0[R](implicit a: Arbitrary[R]): Arbitrary[() => R] =
+    ArbitraryK.function0.synthesize[R]
 
-    def laws[M[_]](implicit ma: MonadAsync[M], am: Arbitrary[M[Int]], a: Arbitrary[Int], am0: Arbitrary[() => Int],
-                   ama: Arbitrary[Int => M[Int]], e: Equal[M[Int]]) =
-      new Properties("monad async") {
-        property("asyncIsDelay") = asyncIsDelay[M, Int]
-        property("bindAIsBind") = bindAIsBind[M, Int, Int]
-        property("mapAIsMap") = mapAIsMap[M, Int, Int]
-      }
+  def laws: MonadAsyncLaws[F]
 
+  def monadAsync[A: Arbitrary, B: Arbitrary, C: Arbitrary](implicit ArbF: ArbitraryK[F],
+                                                           EqFA: Eq[F[A]],
+                                                           EqFB: Eq[F[B]],
+                                                           EqFC: Eq[F[C]]): RuleSet = {
+    implicit def ArbFA: Arbitrary[F[A]] = ArbF.synthesize[A]
+    implicit def ArbFB: Arbitrary[F[B]] = ArbF.synthesize[B]
+    implicit def ArbFC: Arbitrary[F[C]] = ArbF.synthesize[C]
+    implicit def ArbFAB: Arbitrary[F[A => B]] = ArbF.synthesize[A => B]
+
+    new DefaultRuleSet(
+      name = "monadAsync",
+      parent = None,
+      "asyncIsDelay" -> forAll(laws.asyncIsDelay[A] _),
+      "bindAIsBind" -> forAll(laws.bindAIsBind[A, B] _),
+      "mapAIsMap" -> forAll(laws.mapAIsMap[A, B] _)
+    )
   }
+}
 
+object MonadAsyncTests {
+  def apply[F[_]](implicit MA: MonadAsync[F]): MonadAsyncTests[F] =
+    new MonadAsyncTests[F] { def laws: MonadAsyncLaws[F] = MonadAsyncLaws[F] }
 }

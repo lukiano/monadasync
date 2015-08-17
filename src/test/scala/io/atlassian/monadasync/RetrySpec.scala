@@ -1,39 +1,41 @@
 package io.atlassian.monadasync
 
+import cats.data.XorT
+import cats.state.StateT
 import org.scalacheck.Prop
 import org.specs2.ScalaCheck
 
-import scalaz._
-import scalaz.concurrent.Future
-import scalaz.std.anyVal._
+import cats._
+import cats.syntax.functor._
+import cats.syntax.flatMap._
+import Future._
+import Retry.monadError._
 
 object RetrySpec extends org.specs2.mutable.SpecificationWithJUnit with ScalaCheck {
 
   type Failure = String
-  type EitherFixed[A] = EitherT[Future, Failure, A]
-  type TC[A] = WriterT[EitherFixed, Int, A]
+  type EitherFixed[A] = XorT[Future, Failure, A]
+  type TC[A] = StateT[EitherFixed, Int, A]
 
   def run[A](f: TC[A]): Option[A] =
-    f.value.run.run.toOption
+    f.runA(0).value.map(_.toOption).run
 
   implicit val ME = new MonadError[({ type l[α, β] = TC[β] })#l, Failure] {
 
-    private val e = MonadError[EitherT[Future, ?, ?], Failure]
-    private val w = WriterT.writerTMonad[EitherFixed, Int]
+    private val e = MonadError[XorT[Future, ?, ?], Failure]
+    private val w = StateT.stateTMonadState[EitherFixed, Int]
     override def raiseError[A](f: Failure): TC[A] =
-      WriterT[EitherFixed, Int, A](e.raiseError(f))
+      StateT[EitherFixed, Int, A](_ => e.raiseError(f))
     override def handleError[A](fa: TC[A])(f: Failure => TC[A]): TC[A] =
-      WriterT[EitherFixed, Int, A](e.handleError(fa.run) { i => f(i).run })
-    override def point[A](a: => A): TC[A] =
-      w.point(a)
-    override def bind[A, B](fa: TC[A])(f: A => TC[B]): TC[B] =
-      w.bind(fa)(f)
+      StateT[EitherFixed, Int, A](s => e.handleError(fa.run(s)) { i => f(i).run(s) })
+    override def pure[A](a: A): TC[A] =
+      w.pure(a)
+    override def flatMap[A, B](fa: TC[A])(f: A => TC[B]): TC[B] =
+      w.flatMap(fa)(f)
   }
 
   "retries a retriable task n times" ! Prop.forAll { xs: List[Byte] =>
     import scala.concurrent.duration._
-    import scalaz.syntax.monad._
-    import Retry.monadError._
 
     var x = 0
     val errorMessage = "can be repeated"

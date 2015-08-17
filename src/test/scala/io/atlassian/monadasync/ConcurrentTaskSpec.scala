@@ -2,20 +2,22 @@ package io.atlassian.monadasync
 
 import java.util.concurrent.{ Executors, ThreadFactory }
 
+import cats.Monad
+
 import scala.collection.immutable.Queue
 import scala.concurrent.SyncVar
-import scalaz.\/
-import scalaz.concurrent.Task
 
 // borrowed from scalaz concurrent tests
 object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
 
-  type TC[A] = Task[A]
-  val MA = MonadAsync[TC]
+  val MA: MonadAsync[Future] = MonadAsync[Future]
   implicit val pool = DefaultExecutor
   import MA._
+  import cats.syntax.functor._
+  import cats.syntax.flatMap._
+  implicit val Monad: Monad[Future] = MA.monad
 
-  "Task" should {
+  "Future" should {
 
     "correctly use threads when forked and flatmapped" in {
       @volatile var q = Queue[(Int, String)]()
@@ -23,7 +25,7 @@ object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
       val forked = "forked-thread"
       val current = Thread.currentThread().getName
 
-      def enqueue(taskId: Int) =
+      def enqueue(taskId: Int): Unit =
         q = q.enqueue((taskId, Thread.currentThread().getName))
 
       val es = Executors.newFixedThreadPool(1, new ThreadFactory {
@@ -56,26 +58,11 @@ object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
       runned(1) must_== ((2, current))
 
       //the after async must not be the last ever
-      (runned.last._1 != 9) must_== (true)
+      (runned.last._1 != 9) must_== true
 
       //the rest of tasks must be run off the forked thread
       runned.filter(_._2 == forked).map(_._1) must_== List(3, 4, 5, 6, 7, 8)
 
     }
-
-    "complete even when interrupted" in {
-      val t = fork(delay(Thread.sleep(3000)))
-      val sync = new SyncVar[Throwable \/ Unit]
-      val interrupt = t.runAsyncInterruptibly(sync.put)
-      Thread.sleep(1000)
-      interrupt()
-      sync.get(3000) map { _.toEither } must beSome {
-        e: Either[Throwable, Unit] =>
-          e must beLeft {
-            t: Throwable => t === Task.TaskInterrupted
-          }
-      }
-    }
-
   }
 }

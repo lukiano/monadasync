@@ -2,30 +2,25 @@ import scalariform.formatter.preferences.{AlignParameters, AlignSingleLineCaseSt
 
 organization := "io.atlassian"
 
-name := "monadasync"
+name := "monadasync-cats"
 
 scalaVersion := "2.11.7"
-
-crossScalaVersions := Seq("2.10.5", "2.11.7")
 
 homepage := Some(url("https://bitbucket.org/lleggieri/monadasync"))
 
 val specs2Version = "3.6.4"
-val scalazVersion = "7.1.3"
 val scalacheckVersion = "1.12.2"
 val junitVersion = "4.12"
 val ssbindingVersion = "0.4.0"
+val catsVersion = "0.1.2"
 
 libraryDependencies ++= Seq(
-    "org.scalaz"     %% "scalaz-core"               % scalazVersion
-  , "org.scalaz"     %% "scalaz-concurrent"         % scalazVersion
-  , "org.scalaz"     %% "scalaz-effect"             % scalazVersion
-  , "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion     % "test"
+    "org.spire-math" %% "cats"                      % catsVersion
+
   , "org.specs2"     %% "specs2-core"               % specs2Version     % "test"
   , "org.specs2"     %% "specs2-junit"              % specs2Version     % "test"
   , "org.specs2"     %% "specs2-scalacheck"         % specs2Version     % "test"
   , "org.scalacheck" %% "scalacheck"                % scalacheckVersion % "test"
-  , "org.typelevel"  %% "scalaz-specs2"             % ssbindingVersion  % "test"
   , "junit"          %  "junit"                     % junitVersion      % "test"
 )
 
