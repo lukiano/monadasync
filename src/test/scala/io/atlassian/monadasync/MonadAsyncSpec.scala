@@ -3,7 +3,7 @@ package io.atlassian.monadasync
 import cats.Eq
 import cats.laws.discipline._
 import org.scalacheck.Prop._
-import org.scalacheck.{ Arbitrary, Prop }
+import org.scalacheck.{ Gen, Arbitrary, Prop }
 import org.typelevel.discipline.Laws
 import org.typelevel.discipline.specs2.mutable.Discipline
 
@@ -42,7 +42,9 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecificationWithJUnit with Dis
 
   implicit val ArbitraryTC: ArbitraryK[TC] = new ArbitraryK[TC] {
     def synthesize[A: Arbitrary]: Arbitrary[TC[A]] = Arbitrary {
-      Arbitrary.arbitrary[A] map MonadAsyncF.now
+      Arbitrary.arbitrary[A] flatMap { a =>
+        Gen.oneOf(MonadAsyncF.now(a), MonadAsyncF.delay(a))
+      }
     }
   }
 

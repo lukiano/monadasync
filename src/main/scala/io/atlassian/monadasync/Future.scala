@@ -34,8 +34,8 @@ object Future {
     }
   }
 
-  implicit val instance = new cats.Monad[Future] {
-    override def pure[A](x: A): Future[A] = Now(x)
+  implicit val instance = new cats.Monad[Future] with cats.Comonad[Future] {
+    override def pure[A](a: A): Future[A] = now(a)
     override def flatMap[A, B](fa: Future[A])(f: A => Future[B]): Future[B] = suspend {
       def loop(thunk: Future[A]): Future[B] = flatMap(thunk)(f)
       fa match {
@@ -44,10 +44,13 @@ object Future {
         case Async(onFinish, g) => Async(onFinish, g andThen loop)
       }
     }
+    override def extract[A](fa: Future[A]): A = fa.run
+    override def coflatMap[A, B](fa: Future[A])(f: Future[A] => B): Future[B] = delay(f(fa))
   }
 
-  def async[A](listen: Callback[A]): Future[A] = Async((cb: Trampolined[A]) => listen { a => cb(a).run }, Now.apply)
-  def delay[A](a: => A): Future[A] = suspend(Now(a))
+  def now[A](a: A): Future[A] = Now(a)
+  def async[A](listen: Callback[A]): Future[A] = Async((cb: Trampolined[A]) => listen { a => cb(a).run }, now)
+  def delay[A](a: => A): Future[A] = suspend(now(a))
   def suspend[A](f: => Future[A]): Future[A] = Suspend(() => f)
 
   implicit class FutureOps[A](val fa: Future[A]) extends AnyVal {
