@@ -35,20 +35,20 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecificationWithJUnit with Dis
     }
   }
 
-  implicit def EqualTC[A](implicit e: Eq[A]): Eq[TC[A]] =
-    new Eq[TC[A]] {
-      override def eqv(tc1: MonadAsyncSpec.TC[A], tc2: MonadAsyncSpec.TC[A]): Boolean = e.eqv(run(tc1), run(tc2))
+  implicit def EqualTC[A](implicit e: Eq[A]): Eq[StateTask[A]] =
+    new Eq[StateTask[A]] {
+      override def eqv(tc1: MonadAsyncSpec.StateTask[A], tc2: MonadAsyncSpec.StateTask[A]): Boolean = e.eqv(run(tc1), run(tc2))
     }
 
-  implicit val ArbitraryTC: ArbitraryK[TC] = new ArbitraryK[TC] {
-    def synthesize[A: Arbitrary]: Arbitrary[TC[A]] = Arbitrary {
+  implicit val ArbitraryTC: ArbitraryK[StateTask] = new ArbitraryK[StateTask] {
+    def synthesize[A: Arbitrary]: Arbitrary[StateTask[A]] = Arbitrary {
       Arbitrary.arbitrary[A] flatMap { a =>
         Gen.oneOf(MonadAsyncF.now(a), MonadAsyncF.delay(a))
       }
     }
   }
 
-  checkAll("AwsActionMonad Monad laws", MonadAsyncTests[TC](MonadAsyncF).monadAsync[Int, Int, Int])
+  checkAll("AwsActionMonad Monad laws", MonadAsyncTests[StateTask](MonadAsyncF).monadAsync[Int, Int, Int])
 }
 
 trait MonadAsyncTests[F[_]] extends Laws {

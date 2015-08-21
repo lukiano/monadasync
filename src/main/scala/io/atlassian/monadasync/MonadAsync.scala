@@ -3,7 +3,6 @@ package io.atlassian.monadasync
 import java.util.concurrent.{ Executor, ScheduledExecutorService, TimeUnit }
 
 import cats.data.{ Kleisli, ReaderT, XorT, Xor }
-import cats.laws.IsEq
 import cats.state.StateT
 
 import scala.concurrent.duration.Duration
