@@ -8,14 +8,14 @@ import MonadAsync._
 import Nondeterminisms._
 
 trait Async {
-  type EitherFixed[A] = EitherT[Future, Throwable, A]
-  type WriterFixed[A] = WriterT[EitherFixed, Int, A]
-  type TC[A] = ReaderT[WriterFixed, Unit, A]
+  type Task[A] = EitherT[Future, Throwable, A]
+  type WrittenTask[A] = WriterT[Task, Int, A]
+  type Example[A] = ReaderT[WrittenTask, Unit, A]
 
-  def run[A](f: TC[A]): A =
+  def run[A](f: Example[A]): A =
     f.run(()).value.run.run.toOption.get
 
-  val MonadAsyncF = MonadAsync[TC]
+  val MonadAsyncF = MonadAsync[Example]
 
-  val NondeterminismF = Nondeterminism[TC]
+  val NondeterminismF = Nondeterminism[Example]
 }

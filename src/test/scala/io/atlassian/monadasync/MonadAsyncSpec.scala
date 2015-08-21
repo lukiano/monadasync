@@ -56,7 +56,7 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec with As
     }
   }
 
-  def deadlocks(depth: Int): TC[List[Long]] =
+  def deadlocks(depth: Int): Example[List[Long]] =
     if (depth == 1)
       fork(
         delay {
@@ -73,7 +73,7 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec with As
 
   implicit val MonadAsyncTF = MonadAsyncF
 
-  implicit def ArbitraryTC[A](implicit a: Arbitrary[A]): Arbitrary[TC[A]] = Arbitrary {
+  implicit def ArbitraryTC[A](implicit a: Arbitrary[A]): Arbitrary[Example[A]] = Arbitrary {
     a.arbitrary map MonadAsyncF.now
   }
 
@@ -83,12 +83,12 @@ object MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec with As
 
   import scalaz.std.anyVal._
 
-  implicit def EqualTc[A](implicit e: Equal[A]): Equal[TC[A]] =
-    new Equal[TC[A]] {
-      override def equal(tc1: MonadAsyncSpec.TC[A], tc2: MonadAsyncSpec.TC[A]): Boolean = e.equal(run(tc1), run(tc2))
+  implicit def EqualTc[A](implicit e: Equal[A]): Equal[Example[A]] =
+    new Equal[Example[A]] {
+      override def equal(tc1: MonadAsyncSpec.Example[A], tc2: MonadAsyncSpec.Example[A]): Boolean = e.equal(run(tc1), run(tc2))
     }
 
-  checkAll("AwsActionMonad Monad laws", MonadAsyncProperties.monadAsync.laws[TC])
+  checkAll("AwsActionMonad Monad laws", MonadAsyncProperties.monadAsync.laws[Example])
 
 }
 
