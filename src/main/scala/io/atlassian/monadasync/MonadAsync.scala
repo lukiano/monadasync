@@ -39,35 +39,35 @@ trait MonadAsync[F[_]] {
    */
   def async[A](a: => A)(implicit pool: Executor): F[A] =
     async { cb =>
-      pool.execute { new Runnable { def run() = cb(a) } }
+      pool.execute(new Runnable { def run() = cb(a) })
     }
 
   /**
    * Asynchronous bind. f executes in a thread within the given pool.
    */
   def bindA[A, B](fa: F[A])(f: A => F[B])(implicit pool: Executor): F[B] =
-    mapA(fa)(f) >>= identity
+    fork(fa) >>= f
 
   /**
    * All operations against F after fork will execute in a thread within the given pool.
    */
   def fork[A](fa: => F[A])(implicit pool: Executor): F[A] =
-    async(fa) >>= identity
+    async(fa).join
 
   /**
    * Asynchronous map. f executes in a thread within the given pool.
    */
   def mapA[A, B](fa: F[A])(f: A => B)(implicit pool: Executor): F[B] =
-    fa >>= { a => async(f(a)) }
+    fork(fa) map f
 
   /**
    * @return an F[A] whose value will be set after a given delay, and future operation will execute in a thread within the given pool.
    */
   def schedule[A](a: => A, delay: Duration)(implicit pool: ScheduledExecutorService): F[A] =
     async { cb =>
-      pool.schedule(new Runnable {
-        def run() = cb(a)
-      }, delay.toMillis, TimeUnit.MILLISECONDS)
+      pool.schedule(new Runnable { def run() = cb(a) },
+        delay.toMillis,
+        TimeUnit.MILLISECONDS)
       ()
     }
 
