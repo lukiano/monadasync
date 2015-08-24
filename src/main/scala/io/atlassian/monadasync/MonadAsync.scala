@@ -39,7 +39,7 @@ trait MonadAsync[F[_]] {
    */
   def async[A](a: => A)(implicit pool: Executor): F[A] =
     async { cb =>
-      pool.execute(new Runnable { def run() = cb(a) })
+      pool.execute(cb(a))
     }
 
   /**
@@ -65,9 +65,7 @@ trait MonadAsync[F[_]] {
    */
   def schedule[A](a: => A, delay: Duration)(implicit pool: ScheduledExecutorService): F[A] =
     async { cb =>
-      pool.schedule(new Runnable { def run() = cb(a) },
-        delay.toMillis,
-        TimeUnit.MILLISECONDS)
+      pool.schedule(cb(a), delay.toMillis, TimeUnit.MILLISECONDS)
       ()
     }
 
@@ -77,6 +75,9 @@ trait MonadAsync[F[_]] {
   def monad: Monad[F] = M
 
   protected implicit def M: Monad[F]
+
+  private implicit def AsRunnable(block: => Unit): Runnable =
+    new Runnable { def run() = block }
 
   val monadAsyncSyntax = new MonadAsync.MonadAsyncSyntax[F] {}
 

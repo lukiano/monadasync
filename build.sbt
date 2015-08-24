@@ -101,3 +101,5 @@ publishTo <<= version { (v: String) =>
 }
 
 sbtrelease.ReleasePlugin.autoImport.releaseCrossBuild := true
+
+wartremoverErrors ++= Warts.all
