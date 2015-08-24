@@ -1,4 +1,4 @@
-import scalariform.formatter.preferences.{AlignParameters, AlignSingleLineCaseStatements}
+import scalariform.formatter.preferences.{ AlignParameters, AlignSingleLineCaseStatements }
 
 organization := "io.atlassian"
 
@@ -96,3 +96,5 @@ publishTo <<= version { (v: String) =>
 }
 
 sbtrelease.ReleasePlugin.autoImport.releaseCrossBuild := true
+
+wartremoverErrors ++= Warts.all
