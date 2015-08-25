@@ -3,6 +3,7 @@ package io.atlassian.monadasync
 import java.util.concurrent.{ Executor, ScheduledExecutorService, TimeUnit }
 
 import scala.concurrent.duration.Duration
+import scala.concurrent.{ ExecutionContext, Future => SFuture }
 import scalaz._
 import scalaz.concurrent.{ Future, Task }
 import scalaz.syntax.monad._
@@ -169,7 +170,7 @@ object MonadAsync extends MonadAsyncInstances {
       }
 
     /**
-     * Future ~> F
+     * scalaz.Future ~> F
      */
     implicit class FutureAsync[A](val f: Future[A]) extends AnyVal {
       def liftAsync[F[_]](implicit MA: MonadAsync[F]): F[A] =
@@ -178,6 +179,21 @@ object MonadAsync extends MonadAsyncInstances {
     implicit def FutureTransformation[F[_]](implicit MA: MonadAsync[F]): Future ~> F =
       new (Future ~> F) {
         def apply[A](f: Future[A]): F[A] = f.liftAsync[F]
+      }
+
+    /**
+     * scala.Future ~> F
+     * Caution: The F will most likely start computing immediately
+     */
+    implicit class ScalaFutureAsync[A](val f: SFuture[A]) extends AnyVal {
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): F[A] = {
+        implicit val M = MA.monad
+        MA.async(f.callback(ExecutionContext.fromExecutor(SameThreadExecutor))).unattempt
+      }
+    }
+    implicit def FutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): SFuture ~> F =
+      new (SFuture ~> F) {
+        def apply[A](f: SFuture[A]): F[A] = f.liftAsync[F]
       }
 
     /**
