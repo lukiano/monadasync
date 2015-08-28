@@ -58,7 +58,8 @@ trait MonadAsyncTests[F[_]] extends Laws {
 
   def laws: MonadAsyncLaws[F]
 
-  def monadAsync[A: Arbitrary, B: Arbitrary, C: Arbitrary](implicit ArbF: ArbitraryK[F],
+  def monadAsync[A: Arbitrary, B: Arbitrary, C: Arbitrary](implicit
+    ArbF: ArbitraryK[F],
                                                            EqFA: Eq[F[A]],
                                                            EqFB: Eq[F[B]],
                                                            EqFC: Eq[F[C]]): RuleSet = {

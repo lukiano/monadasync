@@ -2,58 +2,70 @@ package io.atlassian.monadasync
 
 import cats._
 import free.Trampoline
-import scala.concurrent._
+import std.function.function0Instance
+import scala.annotation.tailrec
+import scala.concurrent.{ duration, SyncVar }
+import Trampoline.done
 
 sealed trait Future[A] {
-  protected def listen(cb: Future.Trampolined[A]): Unit
+  import Future._
 
-  /** Run this computation to obtain an `A`, then invoke the given callback. */
-  final val runAsync: Callback[A] = cb => listen(a => Trampoline.done(cb(a)))
-
-  /** Run this `Future` and block awaiting its result. */
-  def run: A
-}
-
-object Future {
-  import std.function._
-  type Trampolined[A] = A => Trampoline[Unit]
-
-  private case class Now[A](a: A) extends Future[A] {
-    protected def listen(cb: Trampolined[A]) = cb(a).run
-    def run = a
+  @tailrec
+  private def step: DirectFuture[A] = this match {
+    case Now(a)             => Now(a)
+    case Suspend(thunk)     => thunk.run.step
+    case Async(onFinish, f) => Async(onFinish, f)
   }
-  private case class Suspend[A](thunk: () => Future[A]) extends Future[A] {
-    protected def listen(cb: Trampolined[A]) = thunk().listen(cb)
-    def run = thunk().run
-  }
-  private case class Async[A, B](onFinish: Trampolined[A] => Unit, f: A => Future[B]) extends Future[B] {
-    private def effect(g: Future[B] => Unit) = onFinish { a => Trampoline.delay(f(a)) map g }
-    protected def listen(cb: Trampolined[B]) = effect(_ listen cb)
-    def run = {
-      val sync = new SyncVar[B]
-      effect(_ runAsync sync.put)
-      sync.take()
+
+  private[Future] def listen(effect: A => Unit): Unit = this.step match {
+    case Now(a) => effect(a)
+    case as @ Async(onFinish, f) => onFinish {
+      a =>
+        for {
+          ta <- done(a)
+          fta <- f(ta)
+        } yield fta listen effect
     }
   }
 
-  implicit object instance extends Monad[Future] with Comonad[Future] {
+  /** Run this computation to obtain an `A`, then invoke the given callback. */
+  final val runAsync: Callback[A] = listen
+
+  /** Run this `Future` and block awaiting its result. */
+  final def run: A = this.step match {
+    case Now(a) => a
+    case as @ Async(_, _) =>
+      val sync = new SyncVar[A]
+      as.listen(sync.put)
+      sync.take()
+  }
+}
+
+object Future {
+  sealed trait DirectFuture[A] extends Future[A]
+
+  private case class Now[A](a: A) extends DirectFuture[A]
+  private case class Suspend[A](thunk: Trampoline[Future[A]]) extends Future[A]
+  private case class Async[A, B](onFinish: (A => Trampoline[Unit]) => Unit, f: A => Trampoline[Future[B]]) extends DirectFuture[B]
+
+  implicit object instance extends Bimonad[Future] {
     def extract[A](fa: Future[A]): A = fa.run
-    def coflatMap[A, B](fa: Future[A])(f: Future[A] => B): Future[B] = delay(f(fa))
+    def coflatMap[A, B](fa: Future[A])(f: Future[A] => B): Future[B] = map(fa)(f compose pure)
     def pure[A](a: A): Future[A] = now(a)
-    def flatMap[A, B](fa: Future[A])(f: A => Future[B]): Future[B] = suspend {
+    def flatMap[A, B](fa: Future[A])(f: A => Future[B]): Future[B] = {
       def loop(thunk: Future[A]): Future[B] = flatMap(thunk)(f)
       fa match {
-        case Now(a)             => f(a)
-        case Suspend(thunk)     => loop(thunk())
-        case Async(onFinish, g) => Async(onFinish, g andThen loop)
+        case Now(a)             => Suspend(done(a) map f)
+        case Suspend(thunk)     => Suspend(thunk map loop)
+        case Async(onFinish, g) => Async(onFinish, (a: Any) => g(a) map loop)
       }
     }
   }
 
   def now[A](a: A): Future[A] = Now(a)
-  def async[A](listen: Callback[A]): Future[A] = Async((cb: Trampolined[A]) => listen { a => cb(a).run }, now)
+  def async[A](listen: Callback[A]): Future[A] = Async[A, A](cb => listen { a => cb(a).run }, a => done(now(a)))
   def delay[A](a: => A): Future[A] = suspend(now(a))
-  def suspend[A](f: => Future[A]): Future[A] = Suspend(() => f)
+  def suspend[A](f: => Future[A]): Future[A] = Suspend(Trampoline.delay(f))
 
   implicit class FutureOps[A](val fa: Future[A]) extends AnyVal {
     import syntax.flatMap._

@@ -28,17 +28,21 @@ object Retry {
     def retry(delays: Seq[Duration], p: L => Boolean): F[A] =
       retryInternal(delays, p, accumulateErrors = false) map { _._1 }
 
-    protected def retryLogic(f: F[(A, List[L])],
-                             t: Duration,
-                             ts: Seq[Duration],
-                             es: => Stream[L],
-                             p: L => Boolean,
-                             accumulateErrors: Boolean): F[(A, List[L])]
+    protected def retryLogic(
+      f:                F[(A, List[L])],
+      t:                Duration,
+      ts:               Seq[Duration],
+      es:               => Stream[L],
+      p:                L => Boolean,
+      accumulateErrors: Boolean
+    ): F[(A, List[L])]
 
-    protected final def loop(ds: Seq[Duration],
-                             es: => Stream[L],
-                             p: L => Boolean,
-                             accumulateErrors: Boolean): F[(A, List[L])] = {
+    protected final def loop(
+      ds:               Seq[Duration],
+      es:               => Stream[L],
+      p:                L => Boolean,
+      accumulateErrors: Boolean
+    ): F[(A, List[L])] = {
       def acc = if (accumulateErrors) es.toList else Nil
       ds match {
         case Seq()           => self map (_ -> acc)
@@ -46,21 +50,25 @@ object Retry {
       }
     }
 
-    private def retryInternal(delays: Seq[Duration],
-                              p: L => Boolean,
-                              accumulateErrors: Boolean): F[(A, List[L])] =
+    private def retryInternal(
+      delays:           Seq[Duration],
+      p:                L => Boolean,
+      accumulateErrors: Boolean
+    ): F[(A, List[L])] =
       loop(delays, Stream(), p, accumulateErrors)
   }
 
   object monadError {
     implicit def ToRetryOps[F[_]: MonadAsync, L, A](self: F[A])(implicit ME: MonadError[({ type l[α, β] = F[β] })#l, L]) =
       new RetryOps[F, L, A](self) {
-        protected override def retryLogic(f: F[(A, List[L])],
-                                          t: Duration,
-                                          ts: Seq[Duration],
-                                          es: => Stream[L],
-                                          p: L => Boolean,
-                                          accumulateErrors: Boolean): F[(A, List[L])] =
+        protected override def retryLogic(
+          f:                F[(A, List[L])],
+          t:                Duration,
+          ts:               Seq[Duration],
+          es:               => Stream[L],
+          p:                L => Boolean,
+          accumulateErrors: Boolean
+        ): F[(A, List[L])] =
           ME.handleError(f) { e =>
             if (p(e)) {
               loop(ts, e #:: es, p, accumulateErrors) after t
