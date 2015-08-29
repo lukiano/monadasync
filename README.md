@@ -31,6 +31,17 @@ Because Task's handy operations (handle, timed, retry) are lost when you have a 
 - Provides a Timer that returns a value after certain time has passed, and timeouts for effects / computations that take too long.
 - For Scala 2.10 and 2.11
 
-### How-To
+### Example
 
-Please refer to existing tests for usage examples.
+runs 3 times a block of code that ultimately fail, retrying based on examination of the failure
+
+```scala
+def someWork[F[_]: MonadAsync: Monad: Comonad: Catchable]: Unit = {
+  val errorMessage = "can be repeated"
+  val f: F[Unit] = MonadAsync[F].delay { println("Some code") } >> Catchable[F].fail(new Exception(errorMessage))
+  val withRetries: F[Unit] = f.retry(List(1 second, 2 seconds, 4 seconds), { _.getMessage == errorMessage })
+  withRetries.copoint // assume copoint runs F
+}
+```
+
+Please refer to existing tests for more usage examples.
