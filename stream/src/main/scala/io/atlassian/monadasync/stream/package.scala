@@ -6,7 +6,7 @@ import scalaz.stream._
 package object stream {
 
   /** Syntax for Sink */
-  implicit class SinkSyntax[F[_]: MonadAsync, I](val self: Sink[F, I]) {
+  implicit class SinkSyntax[F[_]: MonadSuspend, I](val self: Sink[F, I]) {
     implicit val monad = MonadAsync[F].monad
 
     /** converts sink to sink that first pipes received `I0` to supplied p1 */
@@ -23,7 +23,7 @@ package object stream {
         }
       } map { (f: I => F[Unit]) =>
         lastF = f.some
-        (i0: I0) => MonadAsync[F].suspend {
+        (i0: I0) => MonadSuspend[F].suspend {
           cur match {
             case Halt(_) => sys.error("Impossible")
             case Step(Emit(piped), cont) =>

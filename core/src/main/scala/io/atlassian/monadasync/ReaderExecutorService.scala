@@ -15,6 +15,8 @@ object ReaderExecutorService {
 
   implicit object ReaderExecutorServiceMonadAsync extends MonadAsync[ReaderExecutorService] {
     protected def M = Monad[ReaderExecutorService]
+    def delay[A](a: => A) =
+      Kleisli { _ => Task.delay(a) }
     def now[A](a: A) =
       Kleisli { _ => Task.now(a) }
     override def async[A](a: => A)(implicit ignored: Executor = null) =

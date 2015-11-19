@@ -11,71 +11,47 @@ import scalaz.syntax.monad._
 /**
  * Provides asynchronous operations for F
  */
-trait MonadAsync[F[_]] {
+trait MonadAsync[F[_]] extends MonadSuspend[F] {
 
   /**
-    * @return an F whose value is immediately set.
-    */
-  def now[A](a: A): F[A]
-
-  /**
-    * @return an F whose value will be set from an asynchronous computation, via callback.
-    */
+   * @return an F whose value will be set from an asynchronous computation, via callback.
+   */
   def async[A](listen: Callback[A]): F[A]
 
   /**
-    * @return an F whose value will be computed when called, on the caller thread.
-    */
-  def delay[A](a: => A): F[A] =
-    Monad[F].point(a)
-
-  /**
-    * @return an F[A] wrapped in a suspension to be computed when called, on the caller thread.
-    */
-  def suspend[A](fa: => F[A]): F[A] =
-    now(()) >> fa
-
-  /**
-    * @return an F whose value will be computed when called, in a thread within the given pool.
-    */
+   * @return an F whose value will be computed when called, in a thread within the given pool.
+   */
   def async[A](a: => A)(implicit pool: Executor): F[A] =
     async { cb =>
       pool.execute(cb(a))
     }
 
   /**
-    * Asynchronous bind. f executes in a thread within the given pool.
-    */
+   * Asynchronous bind. f executes in a thread within the given pool.
+   */
   def bindA[A, B](fa: F[A])(f: A => F[B])(implicit pool: Executor): F[B] =
     fork(fa) >>= f
 
   /**
-    * All operations against F after fork will execute in a thread within the given pool.
-    */
+   * All operations against F after fork will execute in a thread within the given pool.
+   */
   def fork[A](fa: => F[A])(implicit pool: Executor): F[A] =
     async(fa).join
 
   /**
-    * Asynchronous map. f executes in a thread within the given pool.
-    */
+   * Asynchronous map. f executes in a thread within the given pool.
+   */
   def mapA[A, B](fa: F[A])(f: A => B)(implicit pool: Executor): F[B] =
     fork(fa) map f
 
   /**
-    * @return an F[A] whose value will be set after a given delay, and future operation will execute in a thread within the given pool.
-    */
+   * @return an F[A] whose value will be set after a given delay, and future operation will execute in a thread within the given pool.
+   */
   def schedule[A](a: => A, delay: Duration)(implicit pool: ScheduledExecutorService): F[A] =
     async { cb =>
       pool.schedule(cb(a), delay.toMillis, TimeUnit.MILLISECONDS)
       ()
     }
-
-  /**
-   * @return the underlying monad.
-   */
-  def monad: Monad[F] = M
-
-  protected implicit def M: Monad[F]
 
   private implicit def AsRunnable(block: => Unit): Runnable =
     new Runnable { def run() = block }
@@ -98,7 +74,7 @@ trait MonadAsync[F[_]] {
 }
 
 object MonadAsync extends MonadAsyncInstances {
-  def apply[F[_]: MonadAsync] = implicitly[MonadAsync[F]]
+  def apply[F[_]: MonadAsync]: MonadAsync[F] = macro imp.summon[MonadAsync[F]]
 
   trait MonadAsyncSyntax[F[_]] {
     implicit def ToMonadAsyncOps[A](v: F[A])(implicit F0: MonadAsync[F]) =
@@ -206,20 +182,14 @@ object MonadAsync extends MonadAsyncInstances {
   }
 }
 
-trait MonadAsyncFunctions {
+trait MonadAsyncFunctions extends MonadSuspendFunctions {
   def schedule[F[_], A](delay: Duration)(a: => A)(implicit MA: MonadAsync[F], pool: ScheduledExecutorService): F[A] =
     MA.schedule(a, delay)
-
-  def tryCatch[F[_]: Monad: Catchable, A](a: => A): F[A] =
-    Task.Try(a).point[F].unattempt
 
   def asyncCatch[F[_], A](a: => A)(implicit MA: MonadAsync[F], C: Catchable[F], pool: Executor): F[A] = {
     implicit val M = MA.monad
     MA.async(Task.Try(a)).unattempt
   }
-
-  def suspend[F[_], A](fa: => F[A])(implicit MA: MonadAsync[F]): F[A] =
-    MA.suspend(fa)
 }
 
 trait MonadAsyncInstances {
@@ -230,8 +200,12 @@ trait MonadAsyncInstances {
 
     def async[A](listen: Callback[A]) =
       Future.async(listen)
+    def delay[A](a: => A) =
+      Future.delay(a)
     def now[A](a: A) =
       Future.now(a)
+    override def suspend[A](fa: => Future[A]) =
+      Future.suspend(fa)
   }
 
   implicit val TaskMonadAsync = new MonadAsync[Task] {
@@ -239,13 +213,19 @@ trait MonadAsyncInstances {
 
     def async[A](listen: (A => Unit) => Unit) =
       Task.async { callback => listen { a => callback(Task.Try(a)) } }
+    def delay[A](a: => A) =
+      Task.delay(a)
     def now[A](a: A) =
       Task.now(a)
+    override def suspend[A](ta: => Task[A]) =
+      Task.suspend(ta)
   }
 
   implicit def EitherTMonadAsync[F[_]: MonadAsync, L] = new MonadAsync[EitherT[F, L, ?]] {
     private implicit val MF: Monad[F] = MonadAsync[F].monad
 
+    def delay[A](a: => A): EitherT[F, L, A] =
+      EitherT.right[F, L, A](MonadAsync[F].delay(a))
     def now[A](a: A): EitherT[F, L, A] =
       EitherT.right[F, L, A](a.now[F])
     def async[A](listen: Callback[A]): EitherT[F, L, A] =
@@ -258,6 +238,8 @@ trait MonadAsyncInstances {
   implicit def WriterTMonadAsync[F[_]: MonadAsync, W: Monoid] = new MonadAsync[WriterT[F, W, ?]] {
     private implicit val MF = MonadAsync[F].monad
 
+    def delay[A](a: => A): WriterT[F, W, A] =
+      put(MonadAsync[F].delay(a))
     def now[A](a: A): WriterT[F, W, A] =
       put(a.now[F])
     def async[A](listen: Callback[A]): WriterT[F, W, A] =
@@ -272,20 +254,24 @@ trait MonadAsyncInstances {
   implicit def ReaderTMonadAsync[F[_]: MonadAsync, E] = new MonadAsync[ReaderT[F, E, ?]] {
     private implicit val MF = MonadAsync[F].monad
 
+    def delay[A](a: => A): ReaderT[F, E, A] =
+      reader { MonadAsync[F].delay(a) }
     def now[A](a: A): ReaderT[F, E, A] =
-      kleisli { a.now[F] }
+      reader { a.now[F] }
     def async[A](listen: Callback[A]): ReaderT[F, E, A] =
-      kleisli { listen.liftAsync[F] }
+      reader { listen.liftAsync[F] }
 
     protected def M =
       Monad[ReaderT[F, E, ?]]
-    private def kleisli[A](fa: => F[A]): ReaderT[F, E, A] =
+    private def reader[A](fa: => F[A]): ReaderT[F, E, A] =
       Kleisli.kleisli { _ => fa }
   }
 
   implicit def StateTMonadAsync[F[_]: MonadAsync, S] = new MonadAsync[StateT[F, S, ?]] {
     private implicit val MF = MonadAsync[F].monad
 
+    def delay[A](a: => A): StateT[F, S, A] =
+      state { MonadAsync[F].delay(a) }
     def now[A](a: A): StateT[F, S, A] =
       state { a.now[F] }
     def async[A](listen: Callback[A]): StateT[F, S, A] =
@@ -298,7 +284,7 @@ trait MonadAsyncInstances {
   }
 }
 
-final class MonadAsyncOps[F[_], A](self: F[A])(implicit MA: MonadAsync[F]) {
+final class MonadAsyncOps[F[_], A](self: F[A])(implicit MA: MonadAsync[F]) extends MonadSuspendOps[F, A](self)(MA) {
   /**
    * Asynchronous bind
    */

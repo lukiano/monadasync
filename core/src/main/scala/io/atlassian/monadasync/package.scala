@@ -33,7 +33,7 @@ package object monadasync {
   implicit class Unattempt[F[_]: Monad: Catchable, A](fa: F[Throwable \/ A]) {
     def unattempt: F[A] =
       fa >>= {
-        case \/-(a)   => a.point[F]
+        case \/-(a) => a.point[F]
         case -\/(err) => Catchable[F].fail(err)
       }
   }

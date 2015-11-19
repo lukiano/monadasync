@@ -103,7 +103,7 @@ object MonadAsyncProperties {
       forAll(ma.monadAsyncLaw.mapAIsMap[A, B] _)
 
     def laws[M[_]](implicit ma: MonadAsync[M], am: Arbitrary[M[Int]], a: Arbitrary[Int], am0: Arbitrary[() => Int],
-                   ama: Arbitrary[Int => M[Int]], e: Equal[M[Int]]) =
+      ama: Arbitrary[Int => M[Int]], e: Equal[M[Int]]) =
       new Properties("monad async") {
         property("asyncIsDelay") = asyncIsDelay[M, Int]
         property("bindAIsBind") = bindAIsBind[M, Int, Int]

@@ -6,8 +6,7 @@ import java.nio.channels.{AsynchronousFileChannel, CompletionHandler, FileChanne
 import java.nio.file.{Files, Path, StandardOpenOption}
 import java.util.concurrent.atomic.AtomicLong
 
-import _root_.io.atlassian.monadasync.MonadAsync
-import io.atlassian.monadasync.MonadAsync.syntax._
+import MonadSuspend.syntax._
 import scodec.bits.{BitVector, ByteVector}
 
 import scala.annotation.tailrec
@@ -200,10 +199,10 @@ object io {
     decodeResource(in)(BitVector.fromMmap(_, chunkSizeInBytes), _.close)
   }
 
-  private def lazyReference[F[_]: MonadAsync: Monad: Catchable, A](fa: F[A]): F[A] =
+  private def lazyReference[F[_]: MonadSuspend: Monad: Catchable, A](fa: F[A]): F[A] =
     Atomic.synchronized[F, A].getOrSet(fa)
 
-  private def attempt[F[_]: MonadAsync: Monad: Catchable, A](a: => A): F[A] =
+  private def attempt[F[_]: MonadSuspend: Monad: Catchable, A](a: => A): F[A] =
     MonadAsync[F].suspend(tryCatch(a))
 
   def asyncChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
@@ -235,8 +234,8 @@ object io {
           })
   }
 
-  def fileChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
-    implicit val monad = MonadAsync[F].monad
+  def fileChunkW[F[_]: MonadSuspend: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
+    implicit val monad = MonadSuspend[F].monad
     resource(
       lazyReference(attempt {
         Files.newByteChannel(f, StandardOpenOption.CREATE, StandardOpenOption.WRITE, if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING)

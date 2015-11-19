@@ -86,7 +86,7 @@ case class Timer(timeoutTickMs: Long = 100, workerName: String = "TimeoutContext
           val timedCallback = () => callback(value)
           // Lazy implementation for now.
           val newEntry: (Instant, List[() => Unit]) = futures.get(waitTime) match {
-            case None       => waitTime -> List(timedCallback)
+            case None => waitTime -> List(timedCallback)
             case Some(list) => waitTime -> (timedCallback :: list)
           }
           futures = futures + newEntry

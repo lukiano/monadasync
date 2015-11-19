@@ -1,9 +1,9 @@
 package io.atlassian.monadasync
 
-import java.util.concurrent.{ConcurrentLinkedQueue, RejectedExecutionException}
+import java.util.concurrent.{ ConcurrentLinkedQueue, RejectedExecutionException }
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future, Promise, duration}
+import scala.concurrent.{ Await, ExecutionContext, Future, Promise, duration }
 
 object AsyncSemaphoreSpec {
 

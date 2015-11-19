@@ -2,15 +2,14 @@ package io.atlassian.monadasync
 
 import java.util.concurrent.RejectedExecutionException
 
-import _root_.io.atlassian.monadasync.MonadAsync
-
+import scalaz.Dequeue
 import scalaz.syntax.catchable._
 import scalaz.syntax.monad._
 import MonadAsync.syntax._
 
 import scalaz.{ -\/, \/-, Catchable }
 
-// borrowed from Twitter-Util, adapted to any F
+// based on the one from Twitter-Util, adapted to any F
 class AsyncSemaphore[F[_]: MonadAsync: Catchable] protected (initialPermits: Int, maxWaiters: Option[Int]) {
   implicit val monad = MonadAsync[F].monad
 
@@ -43,11 +42,10 @@ class AsyncSemaphore[F[_]: MonadAsync: Catchable] protected (initialPermits: Int
      */
     def release(): Unit = {
       AsyncSemaphore.this.synchronized {
-        val next = waitq.pollFirst()
-        if (next != null)
-          next(new SemaphorePermit)
-        else
-          availablePermits += 1
+        Option(waitq.pollFirst()) match {
+          case Some(next) => next(new SemaphorePermit)
+          case None => availablePermits += 1
+        }
       }
     }
   }
