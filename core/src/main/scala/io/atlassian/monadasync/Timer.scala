@@ -8,7 +8,6 @@ import io.atlassian.monadasync.MonadAsync.syntax._
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.Duration
-import scalaz.syntax.either._
 import scalaz.syntax.monad._
 import scalaz.{ Nondeterminism, \/ }
 
