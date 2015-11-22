@@ -1,24 +1,28 @@
 package io.atlassian.monadasync
 package stream
 
-import java.io.{IOException, InputStream}
-import java.nio.channels.{AsynchronousFileChannel, CompletionHandler, FileChannel}
-import java.nio.file.{Files, Path, StandardOpenOption}
+import java.io.{ IOException, InputStream }
+import java.nio.channels.{ AsynchronousFileChannel, CompletionHandler, FileChannel }
+import java.nio.file.{ Files, Path, StandardOpenOption }
 import java.util.concurrent.atomic.AtomicLong
 
 import MonadSuspend.syntax._
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{ BitVector, ByteVector }
+import scodec.stream.StreamCodec
+import scodec.stream.decode.{ Cursor, DecodingError }
 
 import scala.annotation.tailrec
 import scalaz.stream.Process._
 import scalaz.stream.io.resource
-import scalaz.stream.{Cause, Channel, Process, Sink}
-import scalaz.{-\/, Catchable, Id, Monad, \/, \/-, ~>}
+import scalaz.stream.{ Cause, Channel, Process, Sink }
+import scalaz.{ -\/, Catchable, Id, Monad, \/, \/-, ~> }
 
-object io {
+package object file {
+
+  val bufferSize = 32 * 1024
 
   def toInputStream[F[_]: Catchable](p: Process[F, ByteVector])(implicit runner: F ~> Id.Id): InputStream = new InputStream {
-    import Cause.{EarlyCause, End, Kill}
+    import Cause.{ EarlyCause, End, Kill }
 
     var cur = p
 
@@ -102,7 +106,7 @@ object io {
           case Halt(cause) => cause match {
             case End | Kill =>
               chunks = Nil
-            case Cause.Error(e: Error)     => throw e
+            case Cause.Error(e: Error) => throw e
             case Cause.Error(e: Throwable) => throw new IOException(e)
           }
           case s: Step[F, ByteVector] => s.head match {
@@ -144,7 +148,7 @@ object io {
   }
 
   def safe[F[_]: MonadAsync: Catchable](is: => InputStream): Process[F, ByteVector] =
-    Process.constant(bufferSize).through(chunkR(is))
+    Process.constant(bufferSize).asInstanceOf[Process[F, Int]].through[F, ByteVector](chunkR[F](is))
 
   def chunkR[F[_]: MonadAsync: Catchable](is: => InputStream): Channel[F, Int, ByteVector] =
     unsafeChunkR(is).map(f => (n: Int) =>
@@ -157,10 +161,13 @@ object io {
     ) { src =>
         MonadAsync[F].now { (buf: Array[Byte]) =>
           val m = src.read(buf)
-          if (m == buf.length) buf.now
-          else if (m == -1) {
+          if (m == buf.length) {
+            buf.now
+          } else if (m == -1) {
             Catchable[F].fail[Array[Byte]](Cause.Terminated(Cause.End))
-          } else buf.take(m).now
+          } else {
+            buf.take(m).now
+          }
         }
       }
   }
@@ -183,13 +190,13 @@ object io {
     }
 
     def decodeResource[R](acquire: => R)(
-      read:    R => BitVector,
+      read: R => BitVector,
       release: R => Unit
     ): Process[F, A] =
       decodeAsyncResource(attempt(acquire))(read, r => attempt(release(r)))
 
     def decodeAsyncResource[R](acquire: F[R])(
-      read:    R => BitVector,
+      read: R => BitVector,
       release: R => F[Unit]
     ): Process[F, A] =
       Process.eval(acquire).flatMap { r =>
@@ -199,11 +206,13 @@ object io {
     decodeResource(in)(BitVector.fromMmap(_, chunkSizeInBytes), _.close)
   }
 
-  private def lazyReference[F[_]: MonadSuspend: Monad: Catchable, A](fa: F[A]): F[A] =
+  private def lazyReference[F[_]: MonadAsync: Monad: Catchable, A](fa: F[A]): F[A] =
     Atomic.synchronized[F, A].getOrSet(fa)
 
-  private def attempt[F[_]: MonadSuspend: Monad: Catchable, A](a: => A): F[A] =
+  private def attempt[F[_]: MonadAsync: Monad: Catchable, A](a: => A): F[A] =
     MonadAsync[F].suspend(tryCatch(a))
+
+  private object Attachment
 
   def asyncChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
     implicit val monad = MonadAsync[F].monad
@@ -219,13 +228,16 @@ object io {
             val buff = bv.toByteBuffer
             MonadAsync[F].async[Throwable \/ Unit] { cb: (Throwable \/ Unit => Unit) =>
               def go(): Unit = {
-                src.write(buff, pos.get, null, new CompletionHandler[Integer, Any] {
-                  override def completed(result: Integer, attachment: Any): Unit = {
+                src.write(buff, pos.get, Attachment, new CompletionHandler[Integer, Attachment.type] {
+                  override def completed(result: Integer, attachment: Attachment.type): Unit = {
                     pos.addAndGet(result.toLong)
-                    if (buff.hasRemaining) go()
-                    else cb(\/-(()))
+                    if (buff.hasRemaining) {
+                      go()
+                    } else {
+                      cb(\/-(()))
+                    }
                   }
-                  override def failed(exc: Throwable, attachment: Any): Unit =
+                  override def failed(exc: Throwable, attachment: Attachment.type): Unit =
                     cb(-\/(exc))
                 })
               }
@@ -234,11 +246,16 @@ object io {
           })
   }
 
-  def fileChunkW[F[_]: MonadSuspend: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
-    implicit val monad = MonadSuspend[F].monad
+  def fileChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
+    implicit val monad = MonadAsync[F].monad
     resource(
       lazyReference(attempt {
-        Files.newByteChannel(f, StandardOpenOption.CREATE, StandardOpenOption.WRITE, if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING)
+        Files.newByteChannel(
+          f,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.WRITE,
+          if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING
+        )
       })
     )(
         src => attempt { src.close() }

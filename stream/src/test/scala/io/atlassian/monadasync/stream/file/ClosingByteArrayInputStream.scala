@@ -1,5 +1,6 @@
 package io.atlassian.monadasync
 package stream
+package file
 
 import java.io.ByteArrayInputStream
 
@@ -10,17 +11,17 @@ class ClosingByteArrayInputStream(buf: Array[Byte], offset: Int, length: Int)
 
   def this(buf: Array[Byte]) = this(buf, 0, buf.length)
 
-  override def read = eofOr { super.read }
+  override def read: Int = eofOr { super.read }
 
-  override def read(b: Array[Byte]) = eofOr { super.read(b) }
+  override def read(b: Array[Byte]): Int = eofOr { super.read(b) }
 
-  override def read(b: Array[Byte], off: Int, len: Int) = eofOr { super.read(b, off, len) }
+  override def read(b: Array[Byte], off: Int, len: Int): Int = eofOr { super.read(b, off, len) }
 
-  override def skip(n: Long) = if (closed) 0l else super.skip(n)
+  override def skip(n: Long): Long = if (closed) 0L else super.skip(n)
 
-  override def available = if (closed) 0 else super.available
+  override def available: Int = if (closed) 0 else super.available
 
-  override def close() = {
+  override def close(): Unit = {
     closed = true
     super.close()
   }

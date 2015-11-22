@@ -7,7 +7,7 @@ package object stream {
 
   /** Syntax for Sink */
   implicit class SinkSyntax[F[_]: MonadSuspend, I](val self: Sink[F, I]) {
-    implicit val monad = MonadAsync[F].monad
+    implicit val monad = MonadSuspend[F].monad
 
     /** converts sink to sink that first pipes received `I0` to supplied p1 */
     def pipeIn[I0](p1: Process1[I0, I]): Sink[F, I0] = suspend {
@@ -18,8 +18,8 @@ package object stream {
       self.takeWhile { _ =>
         cur match {
           case Halt(Cause.End) => false
-          case Halt(cause)     => throw new Cause.Terminated(cause)
-          case _               => true
+          case Halt(cause) => throw new Cause.Terminated(cause)
+          case _ => true
         }
       } map { (f: I => F[Unit]) =>
         lastF = f.some
@@ -44,7 +44,7 @@ package object stream {
                 s.toProcess.disconnect(Cause.Kill).evalMap(f).drain
             }
           } getOrElse Halt(Cause.Kill)
-        case Cause.End          => halt
+        case Cause.End => halt
         case c @ Cause.Error(_) => halt.causedBy(c)
       }
     }

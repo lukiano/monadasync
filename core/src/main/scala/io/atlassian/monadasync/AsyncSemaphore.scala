@@ -2,7 +2,6 @@ package io.atlassian.monadasync
 
 import java.util.concurrent.RejectedExecutionException
 
-import scalaz.Dequeue
 import scalaz.syntax.catchable._
 import scalaz.syntax.monad._
 import MonadAsync.syntax._

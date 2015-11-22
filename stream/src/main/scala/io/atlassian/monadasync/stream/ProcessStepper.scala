@@ -3,29 +3,29 @@ package stream
 
 import java.util.concurrent.atomic.AtomicReference
 
-import scalaz.std.option._
+import scalaz.std.option.none
 import scalaz.stream.Process
 import scalaz.syntax.monad._
 import scalaz.syntax.monoid._
 import scalaz.syntax.std.option._
-import scalaz.{Catchable, Monad, Monoid}
+import scalaz.{ Catchable, Monad, Monoid }
 
 class ProcessStepper[F[_]: Monad: Catchable, A: Monoid](p: Process[F, A]) {
   import scalaz.stream.Cause._
-  import scalaz.stream.Process.{Await, Emit, Halt, Step}
+  import scalaz.stream.Process.{ Await, Emit, Halt, Step }
 
   private val cur = new AtomicReference[Process[F, A]](p)
 
-  def read = readFrom(finishing = true)
+  def read: F[Option[A]] = readFrom(finishing = true)
 
-  val Done = none[A].point[F]
+  val Done: F[Option[A]] = none[A].point[F]
 
   private def readFrom(finishing: Boolean): F[Option[A]] = {
     cur.get.step match {
       case s: Step[F, A] @unchecked =>
         (s.head, s.next) match {
           case (Emit(os), cont) =>
-            os.foldLeft(∅)((a, o) => a |+| o).point[F] >>= { a =>
+            os.foldLeft[A](∅)((a, o) => a |+| o).point[F] >>= { a =>
               cur.set(cont.continue)
               a.some.point[F]
             }

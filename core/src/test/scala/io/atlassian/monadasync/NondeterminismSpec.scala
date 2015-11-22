@@ -2,12 +2,28 @@ package io.atlassian.monadasync
 
 import java.util.concurrent.Executors
 
-import scalaz.Reducer
+import scalaz.concurrent.Future
+import scalaz.std.anyVal._
+import scalaz._
 import scalaz.std.set._
+import Future._
+import MonadAsync._
+import Nondeterminisms._
 
-object NondeterminismSpec extends org.specs2.mutable.SpecificationWithJUnit with Async {
+object NondeterminismSpec extends org.specs2.mutable.SpecificationWithJUnit {
 
   implicit val es = Executors.newSingleThreadScheduledExecutor
+
+  type Task[A] = EitherT[Future, Throwable, A]
+  type WrittenTask[A] = WriterT[Task, Int, A]
+  type F[A] = ReaderT[WrittenTask, Unit, A]
+
+  def run[A](f: F[A]): A =
+    f.run(()).value.run.run.toOption.get
+
+  val MonadAsyncF = MonadAsync[F]
+
+  val NondeterminismF = Nondeterminism[F]
 
   "Nondeterminism[F]" should {
     import MonadAsyncF._

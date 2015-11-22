@@ -15,7 +15,7 @@ trait Atomic[F[_], A] {
 object Atomic {
   import scalaz.syntax.monad._
   import MonadAsync.syntax._
-  def basic[F[_]: Monad, A] = new Atomic[F, A] {
+  def basic[F[_]: Monad, A]: Atomic[F, A] = new Atomic[F, A] {
     private val value = new AtomicReference[Option[A]](None)
     override def get = value.get.point
     override def getOrElse(a: => A) = get map { _.getOrElse(a) }
@@ -28,7 +28,7 @@ object Atomic {
     }
   }
 
-  def synchronized[F[_]: Monad: MonadAsync: Catchable, A] = new Atomic[F, A] {
+  def synchronized[F[_]: Monad: MonadAsync: Catchable, A]: Atomic[F, A] = new Atomic[F, A] {
     private val mutex = new AsyncMutex[F]()
     @volatile private var value: Option[A] = None
 
@@ -71,7 +71,7 @@ object Atomic {
     }
   }
 
-  def forked[F[_]: MonadAsync: Monad, A](under: Atomic[F, A])(implicit executor: ExecutorService) = new Atomic[F, A] {
+  def forked[F[_]: MonadAsync: Monad, A](under: Atomic[F, A])(implicit executor: ExecutorService): Atomic[F, A] = new Atomic[F, A] {
     override def get = under.get.fork(executor)
     override def getOrElse(a: => A) = under.getOrElse(a).fork(executor)
     override def set = a => under.set(a).fork(executor)

@@ -1,8 +1,7 @@
 package io.atlassian.monadasync
 
-import java.util.concurrent.{ Executor, ScheduledExecutorService, TimeUnit }
+import java.util.concurrent.atomic.AtomicBoolean
 
-import scala.concurrent.duration.Duration
 import scalaz._
 import scalaz.concurrent.Task
 import scalaz.syntax.monad._
@@ -31,37 +30,45 @@ trait MonadSuspend[F[_]] {
   /**
    * @return the underlying monad.
    */
-  def monad: Monad[F] = M
-
-  protected implicit def M: Monad[F]
+  implicit def monad: Monad[F]
 
   val monadSuspendSyntax = new MonadSuspend.MonadSuspendSyntax[F] {}
 
   /**
-   * Some laws any MonadAsync implementation should obey.
-   * TODO include nondeterminism
+   * Some laws any MonadSuspend implementation should obey.
    */
-  //  trait MonadSuspendLaw {
-  //    def asyncIsDelay[A](a: () => A)(implicit FEA: Equal[F[A]]): Boolean =
-  //      FEA.equal(delay(a()), async(a())(MonadAsync.SameThreadExecutor))
-  //    def bindAIsBind[A, B](a: A, f: A => F[A], b: A => F[B])(implicit FEA: Equal[F[B]]): Boolean =
-  //      FEA.equal(f(a) >>= b, bindA(f(a))(b)(MonadAsync.SameThreadExecutor))
-  //    def mapAIsMap[A, B](a: A, f: A => F[A], b: A => B)(implicit FEA: Equal[F[B]]): Boolean =
-  //      FEA.equal(f(a) map b, mapA(f(a))(b)(MonadAsync.SameThreadExecutor))
-  //  }
-  //  def monadAsyncLaw = new MonadAsyncLaw {}
+  trait MonadSuspendLaw {
+    def nowIsPoint[A](a: A)(implicit FEA: Equal[F[A]]): Boolean =
+      FEA.equal(now(a), a.point[F])
+    def delayDoesntRun[A](a: A)(implicit FEA: Equal[F[A]]): Boolean = {
+      val flag = new AtomicBoolean(false)
+      def run: A = {
+        flag.set(true)
+        a
+      }
+      val fa = delay(run)
+      if (flag.get()) {
+        false
+      } else {
+        FEA.equal(fa, now(a)) && flag.get()
+      }
+    }
+    def suspendIsDelayJoin[A](fa: F[A])(implicit FEA: Equal[F[A]]): Boolean =
+      FEA.equal(delay(fa).join, suspend(fa))
+  }
+  def monadSuspendLaw: MonadSuspendLaw = new MonadSuspendLaw {}
 }
 
 object MonadSuspend {
   def apply[F[_]: MonadSuspend]: MonadSuspend[F] = macro imp.summon[MonadSuspend[F]]
 
   trait MonadSuspendSyntax[F[_]] {
-    implicit def ToMonadSuspendOps[A](v: F[A])(implicit F0: MonadSuspend[F]) =
+    implicit def toMonadSuspendOps[A](v: F[A])(implicit F0: MonadSuspend[F]): MonadSuspendOps[F, A] =
       new MonadSuspendOps[F, A](v)(F0)
   }
 
   object syntax extends MonadSuspendFunctions {
-    implicit def ToMonadSuspendOps[F[_]: MonadSuspend, A](v: F[A]) =
+    implicit def toMonadSuspendOps[F[_]: MonadSuspend, A](v: F[A]): MonadSuspendOps[F, A] =
       new MonadSuspendOps[F, A](v)
   }
 }

@@ -1,18 +1,20 @@
 package io.atlassian.monadasync
 package stream
+package file
 
-import java.io.{ByteArrayOutputStream, DataInputStream, IOException, InputStream, OutputStream}
+import java.io.{ ByteArrayOutputStream, DataInputStream, IOException, InputStream, OutputStream }
 
+import org.junit.runner.RunWith
 import scodec.bits.ByteVector
 
 import scala.collection.GenTraversableOnce
 import scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream.Process
+import org.scalacheck.Prop.{ forAll, secure }
 
 @RunWith(classOf[org.specs2.runner.JUnitRunner])
-class ToInputStreamSpec extends BlobstoreSpec with ByteVectorArbitraries {
-  import io.toInputStream
+class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with ByteOps {
 
   import Task._
 
@@ -154,13 +156,13 @@ class ToInputStreamSpec extends BlobstoreSpec with ByteVectorArbitraries {
   }
 
   def providesValidInputStream =
-    forAll { (content: BlobContent) =>
-      val is = streamFor(content.unwrap)
+    forAll { (content: Array[Byte]) =>
+      val is = streamFor(content)
 
       val streamInputStream = toInputStream {
-        io.safe[Task](is)
+        file.safe[Task](is)
       }
-      (streamInputStream must matchContent(streamFor(content.unwrap))) and
+      (streamInputStream must matchContent(streamFor(content))) and
         testStreamsClosed(is, streamInputStream) === true
     }
 
@@ -174,7 +176,7 @@ class ToInputStreamSpec extends BlobstoreSpec with ByteVectorArbitraries {
         testStreamsClosed(
           is,
           toInputStream {
-            io.safe[Task](is)
+            file.safe[Task](is)
           } unsafeTap { inputStream =>
             inputStream.read() // must read at least one byte to call acquire on unsafeChunkR
             inputStream.close()

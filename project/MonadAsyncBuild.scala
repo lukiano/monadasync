@@ -8,6 +8,8 @@ import scalariform.formatter.preferences.{ AlignParameters, AlignSingleLineCaseS
 object MonadAsyncBuild extends Build {
 
   object Version {
+    val commonsIO = "2.4"
+    val imp = "0.2.0"
     val specs2 = "3.6.5"
     val scalaz = "7.1.5"
     val scalacheck = "1.12.2"
@@ -28,7 +30,7 @@ object MonadAsyncBuild extends Build {
         "org.scalaz"     %% "scalaz-core"               % Version.scalaz
       , "org.scalaz"     %% "scalaz-concurrent"         % Version.scalaz
       , "org.scalaz"     %% "scalaz-effect"             % Version.scalaz
-      , "org.spire-math" %% "imp"                       % "0.2.0"            % "provided"
+      , "org.spire-math" %% "imp"                       % Version.imp        % "provided"
       , "org.scala-lang" %  "scala-reflect"             % version            % "provided"
       , "org.scalaz"     %% "scalaz-scalacheck-binding" % Version.scalaz     % "test"
       , "org.specs2"     %% "specs2-core"               % Version.specs2     % "test"
@@ -100,9 +102,10 @@ object MonadAsyncBuild extends Build {
       },
       sbtrelease.ReleasePlugin.autoImport.releaseCrossBuild := true,
       autoCompilerPlugins := true,
-      addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.6.3")
+      addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.6.3"),
+      parallelExecution in Test := false
 //      wartremoverErrors ++= Warts.unsafe
-    )
+    ) ++ scalariformSettings
   }
 
   lazy val root =
@@ -112,20 +115,21 @@ object MonadAsyncBuild extends Build {
   lazy val core = project
     .in(file("core"))
     .settings(Common.settings)
-    .settings(scalariformSettings)
     .settings(
       name := "monadasync-core"
     )
 
   lazy val stream = project
     .in(file("stream"))
-    .dependsOn(core)
+    .dependsOn(core % "test->test;compile->compile")
     .settings(Common.settings)
-    .settings(scalariformSettings)
     .settings(
       name := "monadasync-stream",
       libraryDependencies ++= Seq(
-        "org.scalaz.stream"   %% "scalaz-stream"     % Version.scalazStream
+        "org.scalaz.stream" %% "scalaz-stream" % Version.scalazStream % "provided",
+        "org.scodec"        %% "scodec-scalaz" % "1.1.0"              % "provided",
+        "org.scodec"        %% "scodec-stream" % "0.11.0"             % "provided",
+        "commons-io"        %  "commons-io"    % Version.commonsIO    % "test"
       )
     )
 }

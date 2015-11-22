@@ -56,7 +56,7 @@ object ConcurrentTaskSpec extends org.specs2.mutable.SpecificationWithJUnit {
       runned(1) must_== ((2, current))
 
       //the after async must not be the last ever
-      (runned.last._1 != 9) must_== (true)
+      (runned.last._1 != 9) must_== true
 
       //the rest of tasks must be run off the forked thread
       runned.filter(_._2 == forked).map(_._1) must_== List(3, 4, 5, 6, 7, 8)

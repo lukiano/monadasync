@@ -2,38 +2,22 @@ package io.atlassian.monadasync
 
 import java.util.concurrent.{ ConcurrentLinkedQueue, RejectedExecutionException }
 
+import org.junit.runner.RunWith
+import org.specs2.specification.core.SpecStructure
+
 import scala.concurrent.duration._
-import scala.concurrent.{ Await, ExecutionContext, Future, Promise, duration }
-
-object AsyncSemaphoreSpec {
-
-  implicit val context = ExecutionContext.fromExecutor(MonadAsync.SameThreadExecutor)
-
-  implicit object FutureMonadAsync extends MonadAsync[Future] {
-    override def now[A](a: A) = Future.successful(a)
-    override protected implicit def M: Monad[Future] = Monad[Future]
-    override def async[A](listen: Callback[A]) = {
-      val p = Promise[A]()
-      listen { a =>
-        p.success(a)
-        ()
-      }
-      p.future
-    }
-  }
-
-  implicit object FutureCatchable extends Catchable[Future] {
-    override def attempt[A](f: Future[A]) = f map { a => \/-(a) } recover { case t => -\/(t) }
-    override def fail[A](err: Throwable) = Future.failed[A](err)
-  }
-
-}
+import scala.concurrent.{ Await, Future, Promise }
+import scalaz.{ Monad, Catchable, \/-, -\/, \/ }
+import scalaz.syntax.functor._
 
 @RunWith(classOf[org.specs2.runner.JUnitRunner])
-class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
-  import AsyncSemaphoreSpec._
+class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
 
-  def is = s2"""
+  private implicit val futureMonad: Monad[Future] = MonadAsync.ScalaFutureMonadAsync.monad
+
+  private implicit val futureCatchable: Catchable[Future] = MonadAsync.ScalaFutureCatchable(MonadAsync.ScalaFutureMonadAsync.context)
+
+  def is: SpecStructure = s2"""
     This is a specification to check AsyncSemaphore and AsyncMutex
 
     AsyncSemaphore should
@@ -56,9 +40,9 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
       new AsyncSemaphoreHelper(sem, count, permits)
   }
 
-  val timeout = 1.second
+  private val timeout = 1.second
 
-  def validateConstructor = {
+  private def validateConstructor = {
     def badPermits: AsyncSemaphore[Future] = { new AsyncSemaphore[Future](0) }
     def badMaxWaiters: AsyncSemaphore[Future] = { new AsyncSemaphore[Future](1, -1) }
     (badPermits must throwA[Exception]) and (badMaxWaiters must throwA[IllegalArgumentException])
@@ -66,14 +50,14 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
 
   private def acquire(s: AsyncSemaphoreHelper): Future[Permit] = {
     val fPermit = s.sem.acquire()
-    fPermit map { permit =>
+    fPermit ∘ { permit =>
       s.count += 1
       s.permits add permit
     }
     fPermit
   }
 
-  def executeImmediately = {
+  private def executeImmediately = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
     (semHelper.sem.numPermitsAvailable === 2) and {
@@ -88,7 +72,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def executeDeferred = {
+  private def executeDeferred = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
     acquire(semHelper)
@@ -108,7 +92,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def boundWaiters = {
+  private def boundWaiters = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
     val semHelper2 = semHelper.copy(sem = new AsyncSemaphore[Future](2, 3))
@@ -138,7 +122,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def exceptions = {
+  private def exceptions = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
 
@@ -146,7 +130,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     val p2 = acquire(semHelper)
     val p3 = acquire(semHelper)
 
-    p3.map(_ => new Exception("OK"))
+    p3 >| new Exception("OK")
     def waitPermit: Permit = { Await.result(p3, timeout) }
     (waitPermit must throwA[Exception]) and {
       Await.result(p2, timeout).release()
@@ -155,7 +139,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def executeQueue = {
+  private def executeQueue = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
 
@@ -190,7 +174,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def releasePermitException = {
+  private def releasePermitException = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
 
@@ -201,7 +185,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     semHelper.sem.numPermitsAvailable === 2
   }
 
-  def executeSyncQueue = {
+  private def executeSyncQueue = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
 
@@ -241,7 +225,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     }
   }
 
-  def handleSyncException = {
+  private def handleSyncException = {
     val sem = new AsyncSemaphore[Future](2)
     val semHelper = new AsyncSemaphoreHelper(sem, 0, new ConcurrentLinkedQueue[Permit])
 
@@ -285,7 +269,7 @@ class AsyncSemaphoreSpec extends BlobstoreSpec with ByteVectorArbitraries {
     def isDefined: Boolean = t.isCompleted
   }
 
-  def mutex = {
+  private def mutex = {
     val m = new AsyncMutex[Future]
     val a0 = m.acquire()
     val a1 = m.acquire()

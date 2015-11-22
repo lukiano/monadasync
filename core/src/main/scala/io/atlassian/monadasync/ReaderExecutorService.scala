@@ -14,7 +14,7 @@ object ReaderExecutorService {
   def apply[A](run: ScheduledExecutorService => Task[A]) = Kleisli.kleisli(run)
 
   implicit object ReaderExecutorServiceMonadAsync extends MonadAsync[ReaderExecutorService] {
-    protected def M = Monad[ReaderExecutorService]
+    def monad = Monad[ReaderExecutorService]
     def delay[A](a: => A) =
       Kleisli { _ => Task.delay(a) }
     def now[A](a: A) =

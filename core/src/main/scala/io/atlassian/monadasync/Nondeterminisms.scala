@@ -1,5 +1,7 @@
 package io.atlassian.monadasync
 
+import scala.concurrent.{ Promise => SPromise, Future => SFuture, ExecutionContext }
+import scala.util.Try
 import scalaz._
 import scalaz.syntax.monad._
 
@@ -52,6 +54,28 @@ object Nondeterminisms {
           case ((ns, a), seq) => (ns, (a, seq map { elem => StateT[F, S, A](_ => elem) }))
         }
       }
+  }
+
+  implicit object ScalaFutureNondeterminism extends Nondeterminism[SFuture] {
+    import MonadAsync._
+    private val context = ScalaFutureMonadAsync.context
+    private val monad = ScalaFutureMonadAsync.monad
+    override def chooseAny[A](head: SFuture[A], tail: Seq[SFuture[A]]): SFuture[(A, Seq[SFuture[A]])] = {
+      val p = SPromise[(Try[A], SFuture[A])]()
+      val result = SPromise[(A, Seq[SFuture[A]])]()
+      val all: Seq[SFuture[A]] = head +: tail
+      all foreach { f =>
+        f.onComplete(t => p.trySuccess((t, f)))(context)
+      }
+      p.future.onSuccess {
+        case (tryValue, futureItself) => result.complete(tryValue.map(v => (v, all.filter(_ != futureItself))))
+      }(context)
+      result.future
+    }
+    override def bind[A, B](fa: SFuture[A])(f: A => SFuture[B]): SFuture[B] =
+      monad.bind(fa)(f)
+    override def point[A](a: => A): SFuture[A] =
+      monad.point(a)
   }
 
 }

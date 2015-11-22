@@ -3,7 +3,7 @@ package io.atlassian.monadasync
 import java.util.concurrent.{ Executor, ScheduledExecutorService, TimeUnit }
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{ ExecutionContext, Future => SFuture }
+import scala.concurrent.{ ExecutionContext, Future => SFuture, Promise => SPromise }
 import scalaz._
 import scalaz.concurrent.{ Future, Task }
 import scalaz.syntax.monad._
@@ -62,15 +62,15 @@ trait MonadAsync[F[_]] extends MonadSuspend[F] {
    * Some laws any MonadAsync implementation should obey.
    * TODO include nondeterminism
    */
-  trait MonadAsyncLaw {
+  trait MonadAsyncLaw extends MonadSuspendLaw {
     def asyncIsDelay[A](a: () => A)(implicit FEA: Equal[F[A]]): Boolean =
       FEA.equal(delay(a()), async(a())(MonadAsync.SameThreadExecutor))
     def bindAIsBind[A, B](a: A, f: A => F[A], b: A => F[B])(implicit FEA: Equal[F[B]]): Boolean =
       FEA.equal(f(a) >>= b, bindA(f(a))(b)(MonadAsync.SameThreadExecutor))
     def mapAIsMap[A, B](a: A, f: A => F[A], b: A => B)(implicit FEA: Equal[F[B]]): Boolean =
-      FEA.equal(f(a) map b, mapA(f(a))(b)(MonadAsync.SameThreadExecutor))
+      FEA.equal(f(a) ∘ b, mapA(f(a))(b)(MonadAsync.SameThreadExecutor))
   }
-  def monadAsyncLaw = new MonadAsyncLaw {}
+  def monadAsyncLaw: MonadAsyncLaw = new MonadAsyncLaw {}
 }
 
 object MonadAsync extends MonadAsyncInstances {
@@ -85,7 +85,7 @@ object MonadAsync extends MonadAsyncInstances {
    * Used to test laws.
    */
   object SameThreadExecutor extends Executor {
-    def execute(command: Runnable) = command.run()
+    def execute(command: Runnable): Unit = command.run()
   }
 
   object syntax extends MonadAsyncFunctions {
@@ -96,7 +96,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations that may return errors.
      */
     implicit class EitherAsync[L, A](val cb: Callback[L \/ A]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], ME: MonadError[({ type l[α, β] = F[β] })#l, L]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], ME: MonadError[Lambda[(α, β) => F[β]], L]): F[A] =
         MA.async(cb) >>= {
           case \/-(a) => a.point[F]
           case -\/(l) => ME.raiseError(l)
@@ -107,7 +107,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations that may contain logs.
      */
     implicit class WriterAsync[W, A](val cb: Callback[(W, A)]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], MT: MonadTell[({ type l[α, β] = F[β] })#l, W]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], MT: MonadTell[Lambda[(α, β) => F[β]], W]): F[A] =
         MA.async(cb) >>= {
           case (w, a) => MT.writer(w, a)
         }
@@ -117,7 +117,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations depend on a configuration.
      */
     implicit class ReaderAsync[R, A](val f: R => Callback[A]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], MR: MonadReader[({ type l[α, β] = F[β] })#l, R]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], MR: MonadReader[Lambda[(α, β) => F[β]], R]): F[A] =
         MR.ask >>= { r =>
           MA.async(f(r))
         }
@@ -148,11 +148,11 @@ object MonadAsync extends MonadAsyncInstances {
     /**
      * scalaz.Future ~> F
      */
-    implicit class FutureAsync[A](val f: Future[A]) extends AnyVal {
+    implicit class ScalazFutureAsync[A](val f: Future[A]) extends AnyVal {
       def liftAsync[F[_]](implicit MA: MonadAsync[F]): F[A] =
         f.callback.liftAsync[F]
     }
-    implicit def FutureTransformation[F[_]](implicit MA: MonadAsync[F]): Future ~> F =
+    implicit def ScalazFutureTransformation[F[_]](implicit MA: MonadAsync[F]): Future ~> F =
       new (Future ~> F) {
         def apply[A](f: Future[A]): F[A] = f.liftAsync[F]
       }
@@ -167,7 +167,7 @@ object MonadAsync extends MonadAsyncInstances {
         MA.async(f.callback(ExecutionContext.fromExecutor(SameThreadExecutor))).unattempt
       }
     }
-    implicit def FutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): SFuture ~> F =
+    implicit def ScalaFutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): SFuture ~> F =
       new (SFuture ~> F) {
         def apply[A](f: SFuture[A]): F[A] = f.liftAsync[F]
       }
@@ -196,7 +196,7 @@ trait MonadAsyncInstances {
   import MonadAsync.syntax._
 
   implicit val FutureMonadAsync = new MonadAsync[Future] {
-    protected def M = Monad[Future]
+    def monad = Monad[Future]
 
     def async[A](listen: Callback[A]) =
       Future.async(listen)
@@ -208,8 +208,32 @@ trait MonadAsyncInstances {
       Future.suspend(fa)
   }
 
+  implicit val ScalaFutureMonadAsync = new MonadAsync[SFuture] {
+    val context: ExecutionContext = ExecutionContext.fromExecutor(MonadAsync.SameThreadExecutor)
+    override val monad = scalaz.std.scalaFuture.futureInstance(context)
+
+    override def delay[A](a: => A) =
+      SFuture(a)(context)
+    override def now[A](a: A) = SFuture.successful(a)
+    override def async[A](listen: Callback[A]) = {
+      val p = SPromise[A]()
+      listen { a =>
+        p.success(a)
+        ()
+      }
+      p.future
+    }
+  }
+
+  implicit def ScalaFutureCatchable(context: ExecutionContext): Catchable[SFuture] = new Catchable[SFuture] {
+    override def attempt[A](f: SFuture[A]): SFuture[Throwable \/ A] =
+      f.map({ a => \/-(a) })(context).recover({ case t => -\/(t) })(context)
+    override def fail[A](err: Throwable): SFuture[A] =
+      SFuture.failed[A](err)
+  }
+
   implicit val TaskMonadAsync = new MonadAsync[Task] {
-    protected def M = Monad[Task]
+    override val monad = Monad[Task]
 
     def async[A](listen: (A => Unit) => Unit) =
       Task.async { callback => listen { a => callback(Task.Try(a)) } }
@@ -231,7 +255,7 @@ trait MonadAsyncInstances {
     def async[A](listen: Callback[A]): EitherT[F, L, A] =
       EitherT.right[F, L, A](listen.liftAsync[F])
 
-    protected def M =
+    override def monad =
       Monad[EitherT[F, L, ?]]
   }
 
@@ -245,7 +269,7 @@ trait MonadAsyncInstances {
     def async[A](listen: Callback[A]): WriterT[F, W, A] =
       put(listen.liftAsync[F])
 
-    protected def M =
+    override val monad =
       Monad[WriterT[F, W, ?]]
     private def put[A](fa: F[A]): WriterT[F, W, A] =
       WriterT.put(fa)(Monoid[W].zero)
@@ -261,7 +285,7 @@ trait MonadAsyncInstances {
     def async[A](listen: Callback[A]): ReaderT[F, E, A] =
       reader { listen.liftAsync[F] }
 
-    protected def M =
+    override val monad =
       Monad[ReaderT[F, E, ?]]
     private def reader[A](fa: => F[A]): ReaderT[F, E, A] =
       Kleisli.kleisli { _ => fa }
@@ -277,7 +301,7 @@ trait MonadAsyncInstances {
     def async[A](listen: Callback[A]): StateT[F, S, A] =
       state { listen.liftAsync[F] }
 
-    protected def M =
+    override val monad =
       Monad[StateT[F, S, ?]]
     private def state[A](fa: => F[A]): StateT[F, S, A] =
       StateT { s => fa map { s -> _ } }
