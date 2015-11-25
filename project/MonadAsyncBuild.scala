@@ -16,6 +16,7 @@ object MonadAsyncBuild extends Build {
     val junit = "4.12"
     val ssbinding = "0.4.0"
     val scalazStream = "0.8"
+    val twitterUtil = "6.29.0"
   }
 
   object Repositories {
@@ -110,7 +111,7 @@ object MonadAsyncBuild extends Build {
 
   lazy val root =
     project.in(file("."))
-      .aggregate(core, stream)
+      .aggregate(core, stream, twitter)
 
   lazy val core = project
     .in(file("core"))
@@ -130,6 +131,17 @@ object MonadAsyncBuild extends Build {
         "org.scodec"        %% "scodec-scalaz" % "1.1.0"              % "provided",
         "org.scodec"        %% "scodec-stream" % "0.11.0"             % "provided",
         "commons-io"        %  "commons-io"    % Version.commonsIO    % "test"
+      )
+    )
+
+  lazy val twitter = project
+    .in(file("twitter"))
+    .dependsOn(core % "test->test;compile->compile")
+    .settings(Common.settings)
+    .settings(
+      name := "monadasync-twitter",
+      libraryDependencies ++= Seq(
+        "com.twitter" %% "util-core" % Version.twitterUtil % "provided"
       )
     )
 }

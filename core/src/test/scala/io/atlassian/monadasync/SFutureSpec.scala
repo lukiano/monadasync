@@ -16,14 +16,7 @@ object SFutureSpec extends MonadAsyncSpec {
 
   override val NondeterminismF = Nondeterminism[F]
 
-  override val laws = MonadAsyncProperties.monadAsync.laws[F](
-    MonadAsyncF,
-    arbitraryTC,
-    arbitraryInt,
-    arbitraryF0,
-    arbitraryF1,
-    equalTc
-  )
+  override val laws = MonadAsyncProperties.monadAsync.laws[F]
 
   checkAll("MonadAsync laws", laws)
 }

@@ -73,7 +73,7 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
       )
     }
 
-  def arbitraryTC(implicit a: Arbitrary[Int]): Arbitrary[F[Int]] = Arbitrary {
+  implicit def arbitraryTC(implicit a: Arbitrary[Int]): Arbitrary[F[Int]] = Arbitrary {
     a.arbitrary flatMap { i =>
       Gen.oneOf(
         Gen.const(MonadAsyncF.now(i)),
@@ -83,7 +83,7 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
     }
   }
 
-  lazy val arbitraryF1: Arbitrary[Int => F[Int]] = Arbitrary {
+  implicit val arbitraryF1: Arbitrary[Int => F[Int]] = Arbitrary {
     Gen.oneOf(
       Gen.const({ i: Int => MonadAsyncF.now(i) }),
       Gen.const({ i: Int => MonadAsyncF.delay(i) }),
@@ -91,13 +91,13 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
     )
   }
 
-  lazy val arbitraryInt: Arbitrary[Int] = Arbitrary.arbInt
+  implicit val arbitraryInt: Arbitrary[Int] = Arbitrary.arbInt
 
-  def arbitraryF0(implicit a: Arbitrary[Int]): Arbitrary[() => Int] = Arbitrary {
+  implicit def arbitraryF0(implicit a: Arbitrary[Int]): Arbitrary[() => Int] = Arbitrary {
     a.arbitrary map { a => () => a }
   }
 
-  def equalTc: Equal[F[Int]] =
+  implicit val equalTc: Equal[F[Int]] =
     new Equal[F[Int]] {
       import scalaz.std.anyVal.intInstance
       override def equal(tc1: F[Int], tc2: F[Int]): Boolean = intInstance.equal(run(tc1), run(tc2))

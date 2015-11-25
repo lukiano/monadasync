@@ -25,7 +25,7 @@ trait MonadSuspend[F[_]] {
    * @return an F[A] wrapped in a suspension to be computed when called, on the caller thread.
    */
   def suspend[A](fa: => F[A]): F[A] =
-    delay(fa).join
+    delay(fa).join // do not use *> from Apply[F] as we want an explicit sequence.
 
   /**
    * @return the underlying monad.

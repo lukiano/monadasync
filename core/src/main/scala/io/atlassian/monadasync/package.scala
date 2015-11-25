@@ -3,6 +3,7 @@ package io.atlassian
 import java.util.concurrent.{ Executor, ScheduledExecutorService }
 
 import scala.concurrent.{ ExecutionContext, Future => SFuture }
+import scala.util.control.NonFatal
 import scalaz._
 import scalaz.concurrent.{ Future, Strategy, Task }
 import scalaz.syntax.catchable._
@@ -43,6 +44,15 @@ package object monadasync {
       case \/-(v) => Monad[F].point(v)
       case -\/(t) => Catchable[F].fail(t)
     }.fork
+
+  def catching[F[_]: MonadAsync: Monad: Catchable, A](a: => A): F[A] =
+    MonadAsync[F].suspend {
+      try {
+        a.point[F]
+      } catch {
+        case NonFatal(e) => Catchable[F].fail(e)
+      }
+    }
 
   val DefaultExecutor = Strategy.DefaultExecutorService
   val DefaultScheduler = Strategy.DefaultTimeoutScheduler

@@ -15,14 +15,7 @@ object TaskSpec extends MonadAsyncSpec {
 
   override val NondeterminismF = Nondeterminism[F]
 
-  val laws = MonadAsyncProperties.monadAsync.laws[F](
-    MonadAsyncF,
-    arbitraryTC,
-    arbitraryInt,
-    arbitraryF0,
-    arbitraryF1,
-    equalTc
-  )
+  val laws = MonadAsyncProperties.monadAsync.laws[F]
 
   checkAll("MonadAsync laws", laws)
 }
