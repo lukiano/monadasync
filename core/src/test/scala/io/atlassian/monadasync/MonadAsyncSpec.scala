@@ -10,6 +10,7 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
   type F[_]
   def MonadAsyncF: MonadAsync[F]
   def NondeterminismF: Nondeterminism[F]
+  def CatchableF: Catchable[F]
   def run[A](f: F[A]): A
 
   implicit val pool = DefaultExecutor
@@ -91,6 +92,13 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
     )
   }
 
+  implicit val arbitraryF2: Arbitrary[F[Int => Int]] = Arbitrary {
+    Gen.oneOf(
+      Gen.const(MonadAsyncF.now({ i: Int => i })),
+      Gen.const(MonadAsyncF.delay({ i: Int => i })),
+      Gen.const(MonadAsyncF.async({ i: Int => i }))
+    )
+  }
   implicit val arbitraryInt: Arbitrary[Int] = Arbitrary.arbInt
 
   implicit def arbitraryF0(implicit a: Arbitrary[Int]): Arbitrary[() => Int] = Arbitrary {
@@ -100,7 +108,10 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
   implicit val equalTc: Equal[F[Int]] =
     new Equal[F[Int]] {
       import scalaz.std.anyVal.intInstance
-      override def equal(tc1: F[Int], tc2: F[Int]): Boolean = intInstance.equal(run(tc1), run(tc2))
+      import scalaz.\/.DisjunctionEqual
+      private implicit val throwableEqual = Equal.equalA[Throwable]
+      override def equal(tc1: F[Int], tc2: F[Int]): Boolean =
+        Equal[Throwable \/ Int].equal(run(CatchableF.attempt(tc1)), run(CatchableF.attempt(tc2)))
     }
 
   def laws: Properties

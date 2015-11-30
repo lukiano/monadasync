@@ -3,7 +3,6 @@ package io.atlassian.monadasync
 import java.util.concurrent.{ Executor, ScheduledExecutorService, TimeUnit }
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{ ExecutionContext, Future => SFuture, Promise => SPromise }
 import scalaz._
 import scalaz.concurrent.{ Future, Task }
 import scalaz.syntax.monad._
@@ -158,21 +157,6 @@ object MonadAsync extends MonadAsyncInstances {
       }
 
     /**
-     * scala.Future ~> F
-     * Caution: The F will most likely start computing immediately
-     */
-    implicit class ScalaFutureAsync[A](val f: SFuture[A]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): F[A] = {
-        implicit val M = MA.monad
-        MA.async(f.callback(ExecutionContext.fromExecutor(SameThreadExecutor))).unattempt
-      }
-    }
-    implicit def ScalaFutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): SFuture ~> F =
-      new (SFuture ~> F) {
-        def apply[A](f: SFuture[A]): F[A] = f.liftAsync[F]
-      }
-
-    /**
      * Any to F.
      */
     implicit class AnyAsync[A](val a: A) extends AnyVal {
@@ -206,30 +190,6 @@ trait MonadAsyncInstances {
       Future.now(a)
     override def suspend[A](fa: => Future[A]) =
       Future.suspend(fa)
-  }
-
-  implicit val ScalaFutureMonadAsync = new MonadAsync[SFuture] {
-    val context: ExecutionContext = ExecutionContext.fromExecutor(MonadAsync.SameThreadExecutor)
-    override val monad = scalaz.std.scalaFuture.futureInstance(context)
-
-    override def delay[A](a: => A) =
-      SFuture(a)(context)
-    override def now[A](a: A) = SFuture.successful(a)
-    override def async[A](listen: Callback[A]) = {
-      val p = SPromise[A]()
-      listen { a =>
-        p.success(a)
-        ()
-      }
-      p.future
-    }
-  }
-
-  implicit def ScalaFutureCatchable(context: ExecutionContext): Catchable[SFuture] = new Catchable[SFuture] {
-    override def attempt[A](f: SFuture[A]): SFuture[Throwable \/ A] =
-      f.map({ a => \/-(a) })(context).recover({ case t => -\/(t) })(context)
-    override def fail[A](err: Throwable): SFuture[A] =
-      SFuture.failed[A](err)
   }
 
   implicit val TaskMonadAsync = new MonadAsync[Task] {

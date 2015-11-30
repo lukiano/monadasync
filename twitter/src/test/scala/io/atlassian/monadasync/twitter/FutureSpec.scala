@@ -2,12 +2,11 @@ package io.atlassian.monadasync
 package twitter
 
 import com.twitter.util.Future
-import org.scalacheck.{ Gen, Arbitrary }
 
 import scalaz.scalacheck.ScalazProperties
-import scalaz.{ Comonad, Nondeterminism }
+import scalaz.{ Catchable, Comonad, Nondeterminism }
 
-class FutureSpec extends MonadAsyncSpec {
+object FutureSpec extends MonadAsyncSpec {
 
   override type F[A] = Future[A]
 
@@ -15,24 +14,16 @@ class FutureSpec extends MonadAsyncSpec {
     Comonad[F].copoint(f)
 
   override val MonadAsyncF = MonadAsync[F]
-
   override val NondeterminismF = Nondeterminism[F]
+  override val CatchableF = Catchable[F]
 
   override val laws = MonadAsyncProperties.monadAsync.laws[F]
-
-  implicit val arbitraryF2: Arbitrary[F[Int => Int]] = Arbitrary {
-    Gen.oneOf(
-      Gen.const(MonadAsyncF.now({ i: Int => i })),
-      Gen.const(MonadAsyncF.delay({ i: Int => i })),
-      Gen.const(MonadAsyncF.async({ i: Int => i }))
-    )
-  }
 
   checkAll("MonadAsync laws", laws)
 
   checkAll("Monad laws", ScalazProperties.monad.laws[F])
 
-  checkAll("MonadPlus laws", ScalazProperties.monadPlus.laws[F])
+  checkAll("MonadPlus laws", ScalazProperties.monadPlus.strongLaws[F])
 
   checkAll("MonadError laws", ScalazProperties.monadError.laws[Lambda[(?, A) => F[A]], Throwable])
 

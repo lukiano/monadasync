@@ -72,7 +72,12 @@ package object twitter {
       Future.exception(new Try.PredicateDoesNotObtain)
 
     override def plus[A](a: Future[A], b: => Future[A]): Future[A] =
-      a or b
+      Futures.join(a.liftToTry, b.liftToTry) flatMap {
+        case (Return(va), Return(_)) => Future.value(va)
+        case (Return(va), Throw(_)) => Future.value(va)
+        case (Throw(_), Return(vb)) => Future.value(vb)
+        case (Throw(ta), Throw(_)) => Future.exception(ta)
+      }
 
     override def chooseAny[A](head: Future[A], tail: Seq[Future[A]]): Future[(A, Seq[Future[A]])] =
       Future.select(head +: tail) flatMap {

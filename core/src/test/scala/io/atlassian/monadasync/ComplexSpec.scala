@@ -1,6 +1,7 @@
 package io.atlassian.monadasync
 
 import scalaz._
+import scalaz.scalacheck.ScalazProperties
 import scalaz.std.anyVal._
 import scalaz.concurrent.Future
 import Future._
@@ -16,8 +17,15 @@ object ComplexSpec extends MonadAsyncSpec {
     f.run(()).value.run.run.toOption.get
 
   override val MonadAsyncF = MonadAsync[F]
-
   override val NondeterminismF = Nondeterminism[F]
+  override val CatchableF = new Catchable[F] {
+    override def attempt[A](f: ReaderT[WrittenTask, Unit, A]): ReaderT[WrittenTask, Unit, Throwable \/ A] =
+      f map \/-.apply
+    override def fail[A](err: Throwable): ReaderT[WrittenTask, Unit, A] =
+      ReaderT[WrittenTask, Unit, A] { _ =>
+        WriterT[Task, Int, A](EitherT(Future.now[Throwable \/ (Int, A)](-\/(err))))
+      }
+  }
 
   override val laws = MonadAsyncProperties.monadAsync.laws[F](
     MonadAsyncF,
@@ -29,4 +37,6 @@ object ComplexSpec extends MonadAsyncSpec {
   )
 
   checkAll("MonadAsync laws", laws)
+
+  checkAll("Monad laws", ScalazProperties.monad.laws[F])
 }

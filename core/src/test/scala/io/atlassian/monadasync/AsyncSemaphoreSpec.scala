@@ -13,9 +13,7 @@ import scalaz.syntax.functor._
 @RunWith(classOf[org.specs2.runner.JUnitRunner])
 class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
 
-  private implicit val futureMonad: Monad[Future] = MonadAsync.ScalaFutureMonadAsync.monad
-
-  private implicit val futureCatchable: Catchable[Future] = MonadAsync.ScalaFutureCatchable(MonadAsync.ScalaFutureMonadAsync.context)
+  import ScalaFuture._
 
   def is: SpecStructure = s2"""
     This is a specification to check AsyncSemaphore and AsyncMutex
