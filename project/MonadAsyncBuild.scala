@@ -21,8 +21,8 @@ object MonadAsyncBuild extends Build {
 
   object Repositories {
     val nexus = "https://maven.atlassian.com/"
-    lazy val release = Some("releases" at nexus + "public")
-    lazy val snapshots = Some("snapshots" at nexus + "public-snapshot")
+    lazy val release = Some("releases" at nexus + "private")
+    lazy val snapshots = Some("snapshots" at nexus + "private-snapshot")
     lazy val localM2 = Some(Resolver.file("localm2", Path.userHome / ".m2" / "repository"))
   }
 
@@ -112,6 +112,10 @@ object MonadAsyncBuild extends Build {
 
   lazy val root =
     project.in(file("."))
+      .settings(Common.settings)
+      .settings(
+        name := "monadasync-root"
+      )
       .aggregate(core, stream, twitter)
 
   lazy val core = project
