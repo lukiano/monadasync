@@ -21,12 +21,23 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
         run(deadlocks(3)).length must_== 4
       }
     }
+    "not overflow when using with scalaz-stream Process" in {
+      import scalaz.stream.Process
+      import scalaz.std.anyVal.intInstance
+      import scalaz.std.indexedSeq.indexedSeqInstance
+      import scalaz.syntax.foldable._
+      val m = MonadAsyncF
+      import m.monad
+      implicit val c = CatchableF
+      val maxValue = 100000
+      run(Process.range(1, maxValue).asInstanceOf[Process[F, Int]].runFoldMap[F, Int](identity)) must_== (1 until maxValue).toIndexedSeq.suml
+    }
 
-    "have a run method that returns" >> {
+    "have some run method that returns" >> {
       "when constructed from MonadAsync.now" in Prop.forAll { (n: Int) =>
         run(MonadAsyncF.now(n)) must_== n
       }
-      "when constructed from MonadAsync.suspend" in Prop.forAll { (n: Int) =>
+      "when constructed from MonadAsync.delay" in Prop.forAll { (n: Int) =>
         run(MonadAsyncF.delay(n)) must_== n
       }
       "when constructed from MonadAsync.fork" in Prop.forAll { (n: Int) =>

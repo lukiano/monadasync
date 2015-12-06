@@ -95,7 +95,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations that may return errors.
      */
     implicit class EitherAsync[L, A](val cb: Callback[L \/ A]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], ME: MonadError[Lambda[(α, β) => F[β]], L]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], ME: MonadError[λ[(α, β) => F[β]], L]): F[A] =
         MA.async(cb) >>= {
           case \/-(a) => a.point[F]
           case -\/(l) => ME.raiseError(l)
@@ -106,7 +106,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations that may contain logs.
      */
     implicit class WriterAsync[W, A](val cb: Callback[(W, A)]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], MT: MonadTell[Lambda[(α, β) => F[β]], W]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], MT: MonadTell[λ[(α, β) => F[β]], W]): F[A] =
         MA.async(cb) >>= {
           case (w, a) => MT.writer(w, a)
         }
@@ -116,7 +116,7 @@ object MonadAsync extends MonadAsyncInstances {
      * Callback for operations depend on a configuration.
      */
     implicit class ReaderAsync[R, A](val f: R => Callback[A]) extends AnyVal {
-      def liftAsync[F[_]](implicit MA: MonadAsync[F], MR: MonadReader[Lambda[(α, β) => F[β]], R]): F[A] =
+      def liftAsync[F[_]](implicit MA: MonadAsync[F], MR: MonadReader[λ[(α, β) => F[β]], R]): F[A] =
         MR.ask >>= { r =>
           MA.async(f(r))
         }
@@ -179,7 +179,7 @@ trait MonadAsyncFunctions extends MonadSuspendFunctions {
 trait MonadAsyncInstances {
   import MonadAsync.syntax._
 
-  implicit val FutureMonadAsync = new MonadAsync[Future] {
+  implicit object FutureMonadAsync extends MonadAsync[Future] {
     def monad = Monad[Future]
 
     def async[A](listen: Callback[A]) =
@@ -192,7 +192,7 @@ trait MonadAsyncInstances {
       Future.suspend(fa)
   }
 
-  implicit val TaskMonadAsync = new MonadAsync[Task] {
+  implicit object TaskMonadAsync extends MonadAsync[Task] {
     override val monad = Monad[Task]
 
     def async[A](listen: (A => Unit) => Unit) =
@@ -205,67 +205,28 @@ trait MonadAsyncInstances {
       Task.suspend(ta)
   }
 
-  implicit def EitherTMonadAsync[F[_]: MonadAsync, L] = new MonadAsync[EitherT[F, L, ?]] {
-    private implicit val MF: Monad[F] = MonadAsync[F].monad
-
-    def delay[A](a: => A): EitherT[F, L, A] =
-      EitherT.right[F, L, A](MonadAsync[F].delay(a))
-    def now[A](a: A): EitherT[F, L, A] =
-      EitherT.right[F, L, A](a.now[F])
-    def async[A](listen: Callback[A]): EitherT[F, L, A] =
-      EitherT.right[F, L, A](listen.liftAsync[F])
-
-    override def monad =
-      Monad[EitherT[F, L, ?]]
+  class MonadTransMonadAsync[F[_]: MonadAsync, G[_[_], _]: MonadTrans] extends MonadAsync[λ[α => G[F, α]]] {
+    protected implicit val monadF: Monad[F] = MonadAsync[F].monad
+    final def delay[A](a: => A): G[F, A] =
+      MonadAsync[F].delay(a).liftM[G]
+    final def now[A](a: A): G[F, A] =
+      a.now[F].liftM[G]
+    final def async[A](listen: Callback[A]): G[F, A] =
+      listen.liftAsync[F].liftM[G]
+    override val monad = MonadTrans[G].apply[F]
   }
 
-  implicit def WriterTMonadAsync[F[_]: MonadAsync, W: Monoid] = new MonadAsync[WriterT[F, W, ?]] {
-    private implicit val MF = MonadAsync[F].monad
+  def tripleMonadTransMonadAsync[F[_], Q, H[_[_], _, _]](implicit MA: MonadAsync[F], MT: MonadTrans[λ[(Φ[_], α) => H[Φ, Q, α]]]) =
+    new MonadTransMonadAsync[F, λ[(Φ[_], α) => H[Φ, Q, α]]]
 
-    def delay[A](a: => A): WriterT[F, W, A] =
-      put(MonadAsync[F].delay(a))
-    def now[A](a: A): WriterT[F, W, A] =
-      put(a.now[F])
-    def async[A](listen: Callback[A]): WriterT[F, W, A] =
-      put(listen.liftAsync[F])
-
-    override val monad =
-      Monad[WriterT[F, W, ?]]
-    private def put[A](fa: F[A]): WriterT[F, W, A] =
-      WriterT.put(fa)(Monoid[W].zero)
-  }
-
-  implicit def ReaderTMonadAsync[F[_]: MonadAsync, E] = new MonadAsync[ReaderT[F, E, ?]] {
-    private implicit val MF = MonadAsync[F].monad
-
-    def delay[A](a: => A): ReaderT[F, E, A] =
-      reader { MonadAsync[F].delay(a) }
-    def now[A](a: A): ReaderT[F, E, A] =
-      reader { a.now[F] }
-    def async[A](listen: Callback[A]): ReaderT[F, E, A] =
-      reader { listen.liftAsync[F] }
-
-    override val monad =
-      Monad[ReaderT[F, E, ?]]
-    private def reader[A](fa: => F[A]): ReaderT[F, E, A] =
-      Kleisli.kleisli { _ => fa }
-  }
-
-  implicit def StateTMonadAsync[F[_]: MonadAsync, S] = new MonadAsync[StateT[F, S, ?]] {
-    private implicit val MF = MonadAsync[F].monad
-
-    def delay[A](a: => A): StateT[F, S, A] =
-      state { MonadAsync[F].delay(a) }
-    def now[A](a: A): StateT[F, S, A] =
-      state { a.now[F] }
-    def async[A](listen: Callback[A]): StateT[F, S, A] =
-      state { listen.liftAsync[F] }
-
-    override val monad =
-      Monad[StateT[F, S, ?]]
-    private def state[A](fa: => F[A]): StateT[F, S, A] =
-      StateT { s => fa map { s -> _ } }
-  }
+  implicit def EitherTMonadAsync[F[_]: MonadAsync, L]: MonadAsync[EitherT[F, L, ?]] =
+    tripleMonadTransMonadAsync[F, L, EitherT]
+  implicit def WriterTMonadAsync[F[_]: MonadAsync, W: Monoid]: MonadAsync[WriterT[F, W, ?]] =
+    tripleMonadTransMonadAsync[F, W, WriterT]
+  implicit def ReaderTMonadAsync[F[_]: MonadAsync, E]: MonadAsync[ReaderT[F, E, ?]] =
+    tripleMonadTransMonadAsync[F, E, ReaderT]
+  implicit def StateTMonadAsync[F[_]: MonadAsync, S]: MonadAsync[StateT[F, S, ?]] =
+    tripleMonadTransMonadAsync[F, S, StateT]
 }
 
 final class MonadAsyncOps[F[_], A](self: F[A])(implicit MA: MonadAsync[F]) extends MonadSuspendOps[F, A](self)(MA) {

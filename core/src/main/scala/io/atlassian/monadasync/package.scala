@@ -2,7 +2,6 @@ package io.atlassian
 
 import java.util.concurrent.{ Executor, ScheduledExecutorService }
 
-import scala.concurrent.{ ExecutionContext, Future => SFuture }
 import scala.util.control.NonFatal
 import scalaz._
 import scalaz.concurrent.{ Future, Strategy, Task }
@@ -18,15 +17,6 @@ package object monadasync {
 
   implicit class FutureToCallback[A](val f: Future[A]) extends AnyVal {
     def callback: Callback[A] = f.runAsync
-  }
-  implicit class ScalaFutureToCallback[A](val f: SFuture[A]) extends AnyVal {
-    import scala.util._
-    def callback(implicit ec: ExecutionContext): Callback[Throwable \/ A] = { cb =>
-      f.onComplete {
-        case Success(a) => cb(\/-(a))
-        case Failure(t) => cb(-\/(t))
-      }
-    }
   }
   implicit class TaskToCallback[A](val f: Task[A]) extends AnyVal {
     def callback: Callback[Throwable \/ A] = f.runAsync

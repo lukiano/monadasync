@@ -1,14 +1,15 @@
 package io.atlassian.monadasync
-package twitter
 
-import com.twitter.util.Future
+import java.util.concurrent.CompletableFuture
 
+import JavaFuture._
+
+import scalaz._
 import scalaz.scalacheck.ScalazProperties
-import scalaz.{ Catchable, Comonad, Nondeterminism }
 
-object FutureSpec extends MonadAsyncSpec {
+object JavaFutureSpec extends MonadAsyncSpec {
 
-  override type F[A] = Future[A]
+  override type F[A] = CompletableFuture[A]
 
   override def run[A](f: F[A]): A =
     Comonad[F].copoint(f)
@@ -21,13 +22,9 @@ object FutureSpec extends MonadAsyncSpec {
 
   checkAll("MonadAsync laws", laws)
 
-  checkAll("Monad laws", ScalazProperties.monad.laws[F])
-
-  checkAll("MonadPlus laws", ScalazProperties.monadPlus.strongLaws[F])
-
-  checkAll("MonadError laws", ScalazProperties.monadError.laws[λ[(?, A) => F[A]], Throwable])
-
   checkAll("Comonad laws", ScalazProperties.comonad.laws[F])
 
   checkAll("Zip laws", ScalazProperties.zip.laws[F])
+
+  //  checkAll("MonadError laws", ScalazProperties.monadError.laws[Lambda[(?, A) => F[A]], Throwable])
 }

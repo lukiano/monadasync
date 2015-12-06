@@ -6,7 +6,7 @@ import ScalaFuture._
 
 import scalaz.scalacheck.ScalazProperties
 
-object SFutureSpec extends MonadAsyncSpec {
+object ScalaFutureSpec extends MonadAsyncSpec {
 
   override type F[A] = Future[A]
 
@@ -21,8 +21,11 @@ object SFutureSpec extends MonadAsyncSpec {
 
   checkAll("MonadAsync laws", laws)
 
-  //  checkAll("MonadError laws", ScalazProperties.monadError.laws[Lambda[(?, A) => F[A]], Throwable])
-
   checkAll("Comonad laws", ScalazProperties.comonad.laws[F])
 
+  checkAll("Zip laws", ScalazProperties.zip.laws[F])
+
+  //  checkAll("MonadError laws", ScalazProperties.monadError.laws[Lambda[(?, A) => F[A]], Throwable])
+
+  //  checkAll("MonadPlus laws", ScalazProperties.monadPlus.strongLaws[F])
 }

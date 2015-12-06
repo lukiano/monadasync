@@ -1,19 +1,16 @@
 package io.atlassian.monadasync
+package twitter
 
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{ BlockingQueue, ArrayBlockingQueue, RejectedExecutionException }
+import java.util.concurrent.{ ArrayBlockingQueue, BlockingQueue, RejectedExecutionException }
 
+import com.twitter.util.{ Await, Future, Duration, Promise }
 import org.junit.runner.RunWith
 import org.specs2.specification.core.SpecStructure
-
-import scala.concurrent.duration._
-import scala.concurrent.{ Await, Future, Promise }
 import scalaz.syntax.functor._
 
 @RunWith(classOf[org.specs2.runner.JUnitRunner])
 class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
-
-  import ScalaFuture._
 
   def is: SpecStructure = s2"""
     This is a specification to check AsyncSemaphore and AsyncMutex
@@ -51,7 +48,7 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
       apply(sem, new ArrayBlockingQueue[Permit](255, true))
   }
 
-  private val timeout = 1.second
+  private val timeout = Duration.fromSeconds(1)
 
   private def validateConstructor = {
     def badPermits: AsyncSemaphore[Future] = { new AsyncSemaphore[Future](0) }
@@ -111,11 +108,13 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
     // The first two acquires obtain a permit.
     acquire(semHelper2)
     acquire(semHelper2)
+
     (semHelper2.count === 2) and {
       // The next three acquires wait.
       acquire(semHelper2)
       acquire(semHelper2)
       acquire(semHelper2)
+
       (semHelper2.count === 2) and (semHelper2.sem.numWaiters === 3)
     } and {
       // The next acquire should be rejected.
@@ -159,7 +158,7 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
         counter = counter + 1
         val promise = Promise[Unit]()
         queue.enqueue(promise)
-        promise.future
+        promise
       }
     }
     (semHelper.sem.numPermitsAvailable === 2) and {
@@ -172,13 +171,13 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
       semHelper.sem.acquireAndRun(func())
       counter === 2
     } and (semHelper.sem.numPermitsAvailable === 0) and {
-      queue.dequeue().success(())
+      queue.dequeue().setDone()
       counter === 3
     } and (semHelper.sem.numPermitsAvailable === 0) and {
-      queue.dequeue().success(())
+      queue.dequeue().setDone()
       semHelper.sem.numPermitsAvailable === 1
     } and {
-      queue.dequeue().failure(new RuntimeException("test"))
+      queue.dequeue().setException(new RuntimeException("test"))
       semHelper.sem.numPermitsAvailable === 2
     }
   }
@@ -205,7 +204,7 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
         counter = counter + 1
         val promise = Promise[Unit]()
         queue.enqueue(promise)
-        promise.future
+        promise
       }
     }
     val func = new (() => Int) {
@@ -225,7 +224,7 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
       (counter === 2) and (semHelper.sem.numPermitsAvailable === 0) and {
         // sync func is blocked at this point.
         // But it should be executed as soon as one of the queued up future functions finish
-        queue.dequeue().success(())
+        queue.dequeue().setDone()
         counter === 3
       } and {
         val result = Await.result(future, timeout)
@@ -245,7 +244,7 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
         counter = counter + 1
         val promise = Promise[Unit]()
         queue.enqueue(promise)
-        promise.future
+        promise
       }
     }
     val badFunc = new (() => Unit) {
@@ -265,17 +264,13 @@ class AsyncSemaphoreSpec extends ImmutableSpec with ByteVectorArbitraries {
         // sync func is blocked at this point.
         // But it should be executed as soon as one of the queued up future functions finish
 
-        queue.dequeue().success(())
+        queue.dequeue().setDone()
         def waitForFuture(): Unit = {
           Await.result(future, timeout)
         }
         (counter === 2) and (waitForFuture() must throwA[Exception]) and (semHelper.sem.numPermitsAvailable === 1)
       }
     }
-  }
-
-  implicit class IsDefined[A](val t: Future[A]) {
-    def isDefined: Boolean = t.isCompleted
   }
 
   private def mutex = {

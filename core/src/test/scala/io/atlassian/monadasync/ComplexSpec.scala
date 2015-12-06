@@ -18,13 +18,29 @@ object ComplexSpec extends MonadAsyncSpec {
 
   override val MonadAsyncF = MonadAsync[F]
   override val NondeterminismF = Nondeterminism[F]
-  override val CatchableF = new Catchable[F] {
-    override def attempt[A](f: ReaderT[WrittenTask, Unit, A]): ReaderT[WrittenTask, Unit, Throwable \/ A] =
-      f map \/-.apply
-    override def fail[A](err: Throwable): ReaderT[WrittenTask, Unit, A] =
-      ReaderT[WrittenTask, Unit, A] { _ =>
-        WriterT[Task, Int, A](EitherT(Future.now[Throwable \/ (Int, A)](-\/(err))))
-      }
+  override val CatchableF = {
+    import scalaz.syntax.monoid._
+    import scalaz.syntax.functor._
+    implicit object CatchableTask extends Catchable[Task] {
+      override def attempt[A](f: Task[A]): Task[Throwable \/ A] =
+        EitherT[Future, Throwable, Throwable \/ A](f.run map \/-.apply)
+      override def fail[A](err: Throwable): Task[A] =
+        EitherT[Future, Throwable, A](Future.now(-\/(err)))
+    }
+
+    implicit def catchableWriterT[G[_], W](implicit C: Catchable[G], M: Functor[G], W: Monoid[W]): Catchable[WriterT[G, W, ?]] = new Catchable[WriterT[G, W, ?]] {
+      override def attempt[A](f: WriterT[G, W, A]): WriterT[G, W, Throwable \/ A] =
+        WriterT[G, W, Throwable \/ A] {
+          C.attempt(f.run) ∘ {
+            case \/-((w, a)) => (w, \/-(a))
+            case -\/(t) => (∅[W], -\/(t))
+          }
+        }
+      override def fail[A](err: Throwable): WriterT[G, W, A] =
+        WriterT[G, W, A](C.fail(err))
+    }
+
+    Kleisli.kleisliCatchable[WrittenTask, Unit]
   }
 
   override val laws = MonadAsyncProperties.monadAsync.laws[F](

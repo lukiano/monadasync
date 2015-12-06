@@ -10,9 +10,9 @@ object MonadAsyncBuild extends Build {
   object Version {
     val commonsIO = "2.4"
     val imp = "0.2.0"
-    val specs2 = "3.6.5"
+    val specs2 = "3.6.6"
     val scalaz = "7.1.5"
-    val scalacheck = "1.12.2"
+    val scalacheck = "1.12.5"
     val junit = "4.12"
     val ssbinding = "0.4.0"
     val scalazStream = "0.8"
@@ -28,18 +28,19 @@ object MonadAsyncBuild extends Build {
 
   object Common {
     def dependencies(version: String) = Seq(
-        "org.scalaz"     %% "scalaz-core"               % Version.scalaz
-      , "org.scalaz"     %% "scalaz-concurrent"         % Version.scalaz
-      , "org.scalaz"     %% "scalaz-effect"             % Version.scalaz
-      , "org.spire-math" %% "imp"                       % Version.imp        % "provided"
-      , "org.scala-lang" %  "scala-reflect"             % version            % "provided"
-      , "org.scalaz"     %% "scalaz-scalacheck-binding" % Version.scalaz     % "test"
-      , "org.specs2"     %% "specs2-core"               % Version.specs2     % "test"
-      , "org.specs2"     %% "specs2-junit"              % Version.specs2     % "test"
-      , "org.specs2"     %% "specs2-scalacheck"         % Version.specs2     % "test"
-      , "org.scalacheck" %% "scalacheck"                % Version.scalacheck % "test"
-      , "org.typelevel"  %% "scalaz-specs2"             % Version.ssbinding  % "test"
-      , "junit"          %  "junit"                     % Version.junit      % "test"
+        "org.scalaz"        %% "scalaz-core"               % Version.scalaz
+      , "org.scalaz"        %% "scalaz-concurrent"         % Version.scalaz
+      , "org.scalaz"        %% "scalaz-effect"             % Version.scalaz
+      , "org.spire-math"    %% "imp"                       % Version.imp          % "provided"
+      , "org.scala-lang"     % "scala-reflect"             % version              % "provided"
+      , "org.scalaz"        %% "scalaz-scalacheck-binding" % Version.scalaz       % "test"
+      , "org.specs2"        %% "specs2-core"               % Version.specs2       % "test"
+      , "org.specs2"        %% "specs2-junit"              % Version.specs2       % "test"
+      , "org.specs2"        %% "specs2-scalacheck"         % Version.specs2       % "test"
+      , "org.scalacheck"    %% "scalacheck"                % Version.scalacheck   % "test"
+      , "org.typelevel"     %% "scalaz-specs2"             % Version.ssbinding    % "test"
+      , "org.scalaz.stream" %% "scalaz-stream"             % Version.scalazStream % "test"
+      , "junit"              % "junit"                     % Version.junit        % "test"
     )
     def settings: Seq[Setting[_]] = Seq(
       organization := "io.atlassian",
@@ -130,7 +131,7 @@ object MonadAsyncBuild extends Build {
         "org.scalaz.stream" %% "scalaz-stream" % Version.scalazStream % "provided",
         "org.scodec"        %% "scodec-scalaz" % "1.1.0"              % "provided",
         "org.scodec"        %% "scodec-stream" % "0.11.0"             % "provided",
-        "commons-io"        %  "commons-io"    % Version.commonsIO    % "test"
+        "commons-io"         % "commons-io"    % Version.commonsIO    % "test"
       )
     )
 

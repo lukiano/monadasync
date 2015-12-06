@@ -1,46 +1,23 @@
 package io.atlassian.monadasync
 
+import java.util.NoSuchElementException
+
 import scala.concurrent.duration.Duration
 import scala.concurrent.{ Await, Promise, Future, ExecutionContext }
-import scala.util.Try
+import scala.util.{ Try, Success => SSuccess, Failure => SFailure }
 import scalaz._
 
 object ScalaFuture {
 
-  private val context: ExecutionContext = ExecutionContext.fromExecutor(MonadAsync.SameThreadExecutor)
+  private val defaultContext: ExecutionContext =
+    ExecutionContext.global
 
-  implicit val ScalaFutureMonadAsync: MonadAsync[Future] = scalaFutureMonadAsync(context)
+  implicit val ScalaFutureMonad = scalaFutureMonad(defaultContext)
 
-  def scalaFutureMonadAsync(context: ExecutionContext): MonadAsync[Future] = new MonadAsync[Future] {
-    override val monad = scalaz.std.scalaFuture.futureInstance(context)
-
-    override def delay[A](a: => A) =
-      Future(a)(context)
-    override def now[A](a: A) = Future.successful(a)
-    override def async[A](listen: Callback[A]) = {
-      val p = Promise[A]()
-      listen { a =>
-        p.success(a)
-        ()
-      }
-      p.future
-    }
-  }
-
-  implicit val ScalaFutureCatchable: Catchable[Future] = scalaFutureCatchable(context)
-
-  def scalaFutureCatchable(context: ExecutionContext): Catchable[Future] = new Catchable[Future] {
-    override def attempt[A](f: Future[A]): Future[Throwable \/ A] =
-      f.map({ a => \/-(a) })(context).recover({ case t => -\/(t) })(context)
-    override def fail[A](err: Throwable): Future[A] =
-      Future.failed[A](err)
-  }
-
-  implicit val ScalaFutureMonad = scalaFutureMonad(context)
-
-  def scalaFutureMonad(context: ExecutionContext): MonadError[Lambda[(?, A) => Future[A]], Throwable] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] =
-    new MonadError[Lambda[(?, A) => Future[A]], Throwable] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] {
-      private val monad = scalaz.std.scalaFuture.futureInstance(context)
+  // MonadError and MonadPlus don't hold laws as Scala's Future wraps Exceptions on each step.
+  def scalaFutureMonad(context: ExecutionContext): MonadError[λ[(?, α) => Future[α]], Throwable] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] with MonadPlus[Future] with Zip[Future] with MonadAsync[Future] with Catchable[Future] =
+    new MonadError[λ[(?, α) => Future[α]], Throwable] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] with MonadPlus[Future] with Zip[Future] with MonadAsync[Future] with Catchable[Future] {
+      final val monad = scalaz.std.scalaFuture.futureInstance(context)
 
       override def raiseError[A](e: Throwable): Future[A] =
         Future.failed(e)
@@ -73,6 +50,35 @@ object ScalaFuture {
         result.future
       }
 
+      override def empty[A]: Future[A] =
+        Future.failed(new NoSuchElementException("Future.filter predicate is not satisfied"))
+
+      override def plus[A](a: Future[A], b: => Future[A]): Future[A] =
+        a.recoverWith({ case _ => b })(context)
+
+      override def zip[A, B](a: => Future[A], b: => Future[B]): Future[(A, B)] =
+        a zip b
+
+      override def delay[A](a: => A) =
+        Future(a)(context)
+
+      override def now[A](a: A) =
+        Future.successful(a)
+
+      override def async[A](listen: Callback[A]) = {
+        val p = Promise[A]()
+        listen { a =>
+          p.success(a)
+          ()
+        }
+        p.future
+      }
+
+      override def attempt[A](f: Future[A]): Future[Throwable \/ A] =
+        f.map({ a => \/-(a) })(context).recover({ case t => -\/(t) })(context)
+
+      override def fail[A](err: Throwable): Future[A] =
+        Future.failed[A](err)
     }
 
   /**
@@ -80,9 +86,15 @@ object ScalaFuture {
    * Caution: The F will most likely start computing immediately
    */
   implicit class ScalaFutureAsync[A](val f: Future[A]) extends AnyVal {
+    def callback(implicit ec: ExecutionContext): Callback[Throwable \/ A] = { cb =>
+      f.onComplete {
+        case SSuccess(a) => cb(\/-(a))
+        case SFailure(t) => cb(-\/(t))
+      }
+    }
     def liftAsync[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): F[A] = {
       implicit val M = MA.monad
-      MA.async(f.callback(context)).unattempt
+      MA.async(f.callback(defaultContext)).unattempt
     }
   }
   implicit def ScalaFutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): Future ~> F =

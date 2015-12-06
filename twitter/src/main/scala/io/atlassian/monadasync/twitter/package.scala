@@ -6,49 +6,8 @@ import scalaz._
 import scalaz.syntax.either._
 
 package object twitter {
-
-  implicit object FutureMonadAsync extends MonadAsync[Future] {
-    /**
-     * @return an F whose value will be set from an asynchronous computation, via callback.
-     */
-    override def async[A](listen: Callback[A]): Future[A] = {
-      val p = new Promise[A]
-      listen(p.setValue)
-      p
-    }
-
-    /**
-     * @return the underlying monad.
-     */
-    override implicit def monad: Monad[Future] =
-      FutureMonad
-
-    /**
-     * @return an F whose value is immediately set.
-     */
-    override def now[A](a: A): Future[A] =
-      Future.value(a)
-
-    /**
-     * @return an F whose value will be computed when called, on the caller thread.
-     */
-    override def delay[A](a: => A): Future[A] =
-      Future(a)
-  }
-
-  implicit object FutureCatchable extends Catchable[Future] {
-    override def attempt[A](fa: Future[A]): Future[Throwable \/ A] =
-      fa transform {
-        case Return(a) => Future.value(a.right)
-        case Throw(t) => Future.value(t.left[A])
-      }
-
-    override def fail[A](e: Throwable): Future[A] =
-      Future.rawException(e)
-  }
-
-  implicit object FutureMonad extends MonadError[Lambda[(?, A) => Future[A]], Throwable]
-      with MonadPlus[Future] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] {
+  implicit object FutureMonad extends MonadError[λ[(?, α) => Future[α]], Throwable]
+      with MonadPlus[Future] with Monad[Future] with Comonad[Future] with Nondeterminism[Future] with Zip[Future] with Catchable[Future] with MonadAsync[Future] {
 
     override def raiseError[A](e: Throwable): Future[A] =
       Future.exception(e)
@@ -72,16 +31,63 @@ package object twitter {
       Future.exception(new Try.PredicateDoesNotObtain)
 
     override def plus[A](a: Future[A], b: => Future[A]): Future[A] =
-      Futures.join(a.liftToTry, b.liftToTry) flatMap {
-        case (Return(va), Return(_)) => Future.value(va)
-        case (Return(va), Throw(_)) => Future.value(va)
-        case (Throw(_), Return(vb)) => Future.value(vb)
-        case (Throw(ta), Throw(_)) => Future.exception(ta)
-      }
+      a.rescue { case _ => b }
 
     override def chooseAny[A](head: Future[A], tail: Seq[Future[A]]): Future[(A, Seq[Future[A]])] =
       Future.select(head +: tail) flatMap {
         case (either, residuals) => Future.const(either) map { (_, residuals) }
       }
+
+    override def zip[A, B](a: => Future[A], b: => Future[B]): Future[(A, B)] =
+      Future.join(a, b)
+
+    override def attempt[A](fa: Future[A]): Future[Throwable \/ A] =
+      fa transform {
+        case Return(a) => Future.value(a.right)
+        case Throw(t) => Future.value(t.left[A])
+      }
+
+    override def fail[A](e: Throwable): Future[A] =
+      Future.rawException(e)
+
+    /**
+     * @return an F whose value will be set from an asynchronous computation, via callback.
+     */
+    override def async[A](listen: Callback[A]): Future[A] = {
+      val p = new Promise[A]
+      listen(p.setValue)
+      p
+    }
+
+    override implicit def monad: Monad[Future] =
+      this
+
+    override def now[A](a: A): Future[A] =
+      Future.value(a)
+
+    override def delay[A](a: => A): Future[A] =
+      Future(a)
   }
+
+  /**
+   * Future ~> F
+   * Caution: The F will most likely start computing immediately
+   */
+  implicit class ScalaFutureAsync[A](val f: Future[A]) extends AnyVal {
+    def liftAsync[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): F[A] = {
+      implicit val M = MA.monad
+      MA.async(f.callback).unattempt
+    }
+    def callback: Callback[Throwable \/ A] = { cb =>
+      f.respond {
+        case Return(a) => cb(\/-(a))
+        case Throw(t) => cb(-\/(t))
+      }
+      ()
+    }
+  }
+  implicit def ScalaFutureTransformation[F[_]](implicit MA: MonadAsync[F], C: Catchable[F]): Future ~> F =
+    new (Future ~> F) {
+      def apply[A](f: Future[A]): F[A] = f.liftAsync[F]
+    }
 }
