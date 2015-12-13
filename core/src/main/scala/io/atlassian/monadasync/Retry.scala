@@ -82,7 +82,7 @@ object Retry {
   }
 
   object catchable {
-    implicit def ToRetryOps[F[_]: MonadAsync: Catchable, A](self: F[A]) =
+    implicit def ToRetryOps[F[_]: MonadAsync: Catchable, A](self: F[A]): RetryOps[F, Throwable, A] =
       new RetryOps[F, Throwable, A](self) {
         import scalaz.syntax.catchable._
         protected override def retryLogic(

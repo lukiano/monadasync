@@ -110,6 +110,7 @@ trait MonadAsyncSpec extends org.specs2.mutable.SpecWithJUnit with Spec {
       Gen.const(MonadAsyncF.async({ i: Int => i }))
     )
   }
+
   implicit val arbitraryInt: Arbitrary[Int] = Arbitrary.arbInt
 
   implicit def arbitraryF0(implicit a: Arbitrary[Int]): Arbitrary[() => Int] = Arbitrary {
