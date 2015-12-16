@@ -75,6 +75,26 @@ trait MonadSuspendInstances {
     implicit def monad: Monad[Trampoline] = Trampoline.trampolineInstance
   }
 
+  class MonadTransMonadSuspend[F[_]: MonadSuspend, G[_[_], _]: MonadTrans] extends MonadSuspend[λ[α => G[F, α]]] {
+    protected implicit val monadF: Monad[F] = MonadSuspend[F].monad
+    final def delay[A](a: => A): G[F, A] =
+      MonadSuspend[F].delay(a).liftM[G]
+    final def now[A](a: A): G[F, A] =
+      MonadSuspend[F].now(a).liftM[G]
+    override val monad = MonadTrans[G].apply[F]
+  }
+
+  def tripleMonadTransMonadSuspend[F[_], Q, H[_[_], _, _]](implicit MA: MonadSuspend[F], MT: MonadTrans[λ[(Φ[_], α) => H[Φ, Q, α]]]) =
+    new MonadTransMonadSuspend[F, λ[(Φ[_], α) => H[Φ, Q, α]]]
+
+  implicit def EitherTMonadSuspend[F[_]: MonadSuspend, L]: MonadSuspend[EitherT[F, L, ?]] =
+    tripleMonadTransMonadSuspend[F, L, EitherT]
+  implicit def WriterTMonadSuspend[F[_]: MonadSuspend, W: Monoid]: MonadSuspend[WriterT[F, W, ?]] =
+    tripleMonadTransMonadSuspend[F, W, WriterT]
+  implicit def ReaderTMonadSuspend[F[_]: MonadSuspend, E]: MonadSuspend[ReaderT[F, E, ?]] =
+    tripleMonadTransMonadSuspend[F, E, ReaderT]
+  implicit def StateTMonadSuspend[F[_]: MonadSuspend, S]: MonadSuspend[StateT[F, S, ?]] =
+    tripleMonadTransMonadSuspend[F, S, StateT]
 }
 
 trait MonadSuspendFunctions {

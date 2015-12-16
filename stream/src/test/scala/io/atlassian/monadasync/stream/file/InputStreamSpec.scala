@@ -4,19 +4,21 @@ package file
 
 import java.io.{ ByteArrayOutputStream, DataInputStream, IOException, InputStream, OutputStream }
 
-import org.junit.runner.RunWith
+import org.scalacheck.Prop.{ forAll, secure }
 import scodec.bits.ByteVector
 
-import scala.collection.GenTraversableOnce
 import scalaz._
-import scalaz.concurrent.Task
 import scalaz.stream.Process
-import org.scalacheck.Prop.{ forAll, secure }
+import MonadSuspend.syntax._
 
-@RunWith(classOf[org.specs2.runner.JUnitRunner])
-class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with ByteOps {
+abstract class InputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with ByteOps {
 
-  import Task._
+  type F[A]
+
+  implicit def Runner: F ~> Id.Id
+
+  implicit def MS: MonadSuspend[F]
+  implicit def C: Catchable[F]
 
   def is = s2"""
     This is a specification to check ToInputStream
@@ -27,7 +29,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
       handles await                                                      $handlesAwait
       handles appended awaits                                            $handlesAppendedAwaits
       handles one append within an await                                 $handlesOneAppendWithinAnAwait
-      handles appends within awaits                                      $handlesAppendsWithinAwaits
+      handles appends within awaits                                      handlesAppendsWithinAwaits //
       invokes finalizers when terminated early                           $invokesFinalizersWhenTerminatedEarly
       safely read byte 255 as an Int                                     $safelyReadByte255AsAnInt
       provide a valid input stream                                       $providesValidInputStream
@@ -36,14 +38,9 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
       read from chunks                                                   $readFromChunks
   """
 
-  implicit val Runner: Task ~> Id.Id = new (Task ~> Id.Id) {
-    def apply[A](fr: Task[A]): A =
-      fr.run
-  }
-
-  def handlesArbitraryEmitAll = forAll { bytes: List[ByteVector] =>
-    val length = bytes map { _.length } sum
-    val p = Process.emitAll(bytes)
+  def handlesArbitraryEmitAll = forAll { bytes: ShortList[ByteVector] =>
+    val length = bytes.list map { _.length } sum
+    val p = Process.emitAll(bytes.list)
 
     val dis = new DataInputStream(toInputStream(p))
     val buffer = new Array[Byte](length)
@@ -53,9 +50,9 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     ByteVector(buffer) === concat(bytes)
   }
 
-  def handlesAppendedEmits = forAll { bytes: List[ByteVector] =>
-    val length = bytes map { _.length } sum
-    val p = (bytes map Process.emit) reduceOption { _ ++ _ } getOrElse Process.empty
+  def handlesAppendedEmits = forAll { bytes: ShortList[ByteVector] =>
+    val length = bytes.list map { _.length } sum
+    val p = (bytes.list map Process.emit) reduceOption { _ ++ _ } getOrElse Process.empty
 
     val dis = new DataInputStream(toInputStream(p))
     val buffer = new Array[Byte](length)
@@ -68,7 +65,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
   def handlesAwait = forAll { chunk: ByteVector =>
     val length = chunk.length
 
-    val p = Process.await(Task now (())) { _ =>
+    val p = Process.await(().now[F]) { _ =>
       Process.emit(chunk)
     }
 
@@ -80,11 +77,11 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     ByteVector(buffer) === chunk
   }
 
-  def handlesAppendedAwaits = forAll { bytes: List[ByteVector] =>
-    val length = bytes map { _.length } sum
+  def handlesAppendedAwaits = forAll { bytes: ShortList[ByteVector] =>
+    val length = bytes.list map { _.length } sum
 
-    val p = bytes map { data =>
-      Process.await(Task now (())) { _ =>
+    val p = bytes.list map { data =>
+      Process.await(().now[F]) { _ =>
         Process.emit(data)
       }
     } reduceOption { _ ++ _ } getOrElse Process.empty
@@ -98,12 +95,12 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
   }
 
   def handlesOneAppendWithinAnAwait = secure {
-    val bytes: List[List[ByteVector]] = List(List(), List(ByteVector(127)))
-    val length = bytes map { _ map { _.length } sum } sum
+    val bytes: ShortList[ShortList[ByteVector]] = ShortList(ShortList.empty, ShortList(ByteVector(127)))
+    val length = bytes.list map { _.list map { _.length } sum } sum
 
-    val p: Process[Task, ByteVector] = bytes map { data =>
-      Process.await(Task now (())) { _ =>
-        data map Process.emit reduceOption { _ ++ _ } getOrElse Process.empty
+    val p: Process[F, ByteVector] = bytes.list map { data =>
+      Process.await(().now[F]) { _ =>
+        data.list map Process.emit reduceOption { _ ++ _ } getOrElse Process.empty
       }
     } reduceOption { _ ++ _ } getOrElse Process.empty
 
@@ -115,12 +112,12 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     ByteVector(buffer) === concat2(bytes)
   }
 
-  def handlesAppendsWithinAwaits = forAll { bytes: List[List[ByteVector]] =>
-    val length = bytes map { _ map { _.length } sum } sum
+  def handlesAppendsWithinAwaits = forAll { bytes: ShortList[ShortList[ByteVector]] =>
+    val length = bytes.list map { _.list map { _.length } sum } sum
 
-    val p = bytes map { data =>
-      Process.await(Task now (())) { _ =>
-        data map Process.emit reduceOption { _ ++ _ } getOrElse Process.empty
+    val p = bytes.list map { data =>
+      Process.await(().now[F]) { _ =>
+        data.list map Process.emit reduceOption { _ ++ _ } getOrElse Process.empty
       }
     } reduceOption { _ ++ _ } getOrElse Process.empty
 
@@ -135,7 +132,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     import scalaz.stream.Process._
 
     var flag = false
-    val setter = Task delay { flag = true }
+    val setter = MonadSuspend[F].delay { flag = true }
 
     val p = (emit(ByteVector(42)) ++ emit(ByteVector(24))) onComplete (Process eval_ setter)
 
@@ -160,7 +157,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
       val is = streamFor(content)
 
       val streamInputStream = toInputStream {
-        file.safe[Task](is)
+        safe[F](is)
       }
       (streamInputStream must matchContent(streamFor(content))) and
         testStreamsClosed(is, streamInputStream) === true
@@ -176,7 +173,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
         testStreamsClosed(
           is,
           toInputStream {
-            file.safe[Task](is)
+            safe[F](is)
           } unsafeTap { inputStream =>
             inputStream.read() // must read at least one byte to call acquire on unsafeChunkR
             inputStream.close()
@@ -200,8 +197,8 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
   def throwsExceptionOnPrematureTermination = {
     var currentCount = 0
     val is = toInputStream {
-      Process.repeatEval {
-        Task.delay {
+      Process.repeat(Process.suspend(Process.eval {
+        MonadSuspend[F].delay {
           val random = scala.util.Random
           currentCount += 1
           if (random.nextDouble() < 0.2 || currentCount >= 100)
@@ -209,7 +206,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
           else
             ByteVector(random.nextInt(100))
         }
-      }
+      }))
     }
 
     Stream.continually {
@@ -222,18 +219,18 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
   }
 
   def readFromChunks = {
-    def source: Int => Task[ByteVector] = _ =>
-      Task.delay(ByteVector.fill(1000)(0))
+    def source: Int => F[ByteVector] = _ =>
+      MonadSuspend[F].delay(ByteVector.fill(1000)(0))
 
-    val trans: Iterator[Task[ByteVector]] = (1 to 10).map(source).iterator
+    val trans: Iterator[F[ByteVector]] = (1 to 10).map(source).iterator
 
-    def readChunks: Process[Task, ByteVector] = {
-      def loop: Process[Task, ByteVector] =
-        Process.await[Task, ByteVector, ByteVector](trans.next()) {
+    def readChunks: Process[F, ByteVector] = {
+      def loop: Process[F, ByteVector] =
+        Process.await[F, ByteVector, ByteVector](trans.next()) {
           case byteArray =>
             Process.emit {
               byteArray
-            }.append[Task, ByteVector] {
+            }.append[F, ByteVector] {
               if (!trans.hasNext) Process.halt
               else loop
             }
@@ -260,7 +257,7 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     }
 
     val is = toInputStream {
-      Process.await[Task, Any, ByteVector](Task.now(())) { _ =>
+      Process.await[F, Unit, ByteVector](().now[F]) { _ =>
         readChunks
       }
     }
@@ -269,11 +266,5 @@ class ToInputStreamSpec extends ImmutableSpec with ByteVectorArbitraries with By
     copyData(is, baos)
     baos.toByteArray.length === 10000
   }
-
-  private def concat(array: GenTraversableOnce[ByteVector]): ByteVector =
-    ByteVector.concat(array)
-
-  private def concat2(array: GenTraversableOnce[GenTraversableOnce[ByteVector]]): ByteVector =
-    array.foldLeft(ByteVector.empty)(_ ++ concat(_))
 }
 

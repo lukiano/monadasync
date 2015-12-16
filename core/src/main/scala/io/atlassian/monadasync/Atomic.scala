@@ -1,6 +1,6 @@
 package io.atlassian.monadasync
 
-import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 
 import scalaz.{ -\/, \/-, Catchable, Monad }
@@ -20,6 +20,20 @@ object Atomic {
     override def get = value.get.point
     override def getOrElse(a: => A) = get map { _.getOrElse(a) }
     override def set = a => value.set(Some(a)).point
+    override def getOrSet(fa: => F[A]): F[A] = get >>= {
+      case Some(a) => a.point[F]
+      case None => fa >>= { a =>
+        set(a) >| a
+      }
+    }
+  }
+
+  def delayed[F[_], A](implicit MA: MonadSuspend[F]): Atomic[F, A] = new Atomic[F, A] {
+    implicit val monad = MA.monad
+    private val value = new AtomicReference[Option[A]](None)
+    override def get = MA.delay { value.get }
+    override def getOrElse(a: => A) = get map { _.getOrElse(a) }
+    override def set = a => MA.delay { value.set(Some(a)) }
     override def getOrSet(fa: => F[A]): F[A] = get >>= {
       case Some(a) => a.point[F]
       case None => fa >>= { a =>
@@ -71,10 +85,10 @@ object Atomic {
     }
   }
 
-  def forked[F[_]: MonadAsync: Monad, A](under: Atomic[F, A])(implicit executor: ExecutorService): Atomic[F, A] = new Atomic[F, A] {
-    override def get = under.get.fork(executor)
-    override def getOrElse(a: => A) = under.getOrElse(a).fork(executor)
-    override def set = a => under.set(a).fork(executor)
-    override def getOrSet(fa: => F[A]) = under.getOrSet(fa).fork(executor)
+  def forked[F[_], A](under: Atomic[F, A])(implicit MA: MonadAsync[F], executor: Executor): Atomic[F, A] = new Atomic[F, A] {
+    override def get = MA.fork { under.get }
+    override def getOrElse(a: => A) = MA.fork { under.getOrElse(a) }
+    override def set = a => MA.fork { under.set(a) }
+    override def getOrSet(fa: => F[A]) = MA.fork { under.getOrSet(fa) }
   }
 }

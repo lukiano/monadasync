@@ -15,7 +15,9 @@ object MonadAsyncBuild extends Build {
     val junit = "4.12"
     val ssbinding = "0.4.0"
     val scalazStream = "0.8"
-    val twitterUtil = "6.29.0"
+    val twitterUtil = "6.30.0"
+    val scodecScalaz = "1.1.0"
+    val scodecStream = "0.11.0"
   }
 
   object Repositories {
@@ -103,7 +105,8 @@ object MonadAsyncBuild extends Build {
       sbtrelease.ReleasePlugin.autoImport.releaseCrossBuild := true,
       autoCompilerPlugins := true,
       addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.6.3"),
-      parallelExecution in Test := false
+      parallelExecution in Test := false,
+      testOptions in Test += Tests.Argument(TestFrameworks.Specs2, "console", "junitxml")
 //      wartremoverErrors ++= Warts.unsafe
     ) ++ scalariformSettings
   }
@@ -131,20 +134,22 @@ object MonadAsyncBuild extends Build {
       name := "monadasync-stream",
       libraryDependencies ++= Seq(
         "org.scalaz.stream" %% "scalaz-stream" % Version.scalazStream % "provided",
-        "org.scodec"        %% "scodec-scalaz" % "1.1.0"              % "provided",
-        "org.scodec"        %% "scodec-stream" % "0.11.0"             % "provided",
+        "org.scodec"        %% "scodec-scalaz" % Version.scodecScalaz % "provided",
+        "org.scodec"        %% "scodec-stream" % Version.scodecStream % "provided",
         "commons-io"         % "commons-io"    % Version.commonsIO    % "test"
       )
     )
 
   lazy val twitter = project
     .in(file("twitter"))
-    .dependsOn(core % "test->test;compile->compile")
+    .dependsOn(core % "test->test;compile->compile").dependsOn(stream % "test->test;compile->compile")
     .settings(Common.settings)
     .settings(
       name := "monadasync-twitter",
       libraryDependencies ++= Seq(
-        "com.twitter" %% "util-core" % Version.twitterUtil % "provided"
+        "com.twitter"       %% "util-core"     % Version.twitterUtil  % "provided",
+        "org.scodec"        %% "scodec-scalaz" % Version.scodecScalaz % "test",
+        "org.scodec"        %% "scodec-stream" % Version.scodecStream % "test"
       )
     )
 }

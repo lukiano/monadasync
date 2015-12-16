@@ -13,6 +13,8 @@ import scalaz.concurrent.Task
 @RunWith(classOf[org.specs2.runner.JUnitRunner])
 class IOSpec extends ImmutableSpec with ByteVectorArbitraries with ByteOps {
 
+  import MonadAsync._
+
   def is = s2"""
       IO should
         synchronously write all data to a file  $fileChunkW

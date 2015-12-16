@@ -13,7 +13,6 @@ import scodec.stream.decode.{ Cursor, DecodingError }
 
 import scala.annotation.tailrec
 import scalaz.stream.Process._
-import scalaz.stream.io.resource
 import scalaz.stream.{ Cause, Channel, Process, Sink }
 import scalaz.{ -\/, Catchable, Id, Monad, \/, \/-, ~> }
 
@@ -147,19 +146,19 @@ package object file {
     }
   }
 
-  def safe[F[_]: MonadAsync: Catchable](is: => InputStream): Process[F, ByteVector] =
+  def safe[F[_]: MonadSuspend: Catchable](is: => InputStream): Process[F, ByteVector] =
     Process.constant(bufferSize).asInstanceOf[Process[F, Int]].through[F, ByteVector](chunkR[F](is))
 
-  def chunkR[F[_]: MonadAsync: Catchable](is: => InputStream): Channel[F, Int, ByteVector] =
+  def chunkR[F[_]: MonadSuspend: Catchable](is: => InputStream): Channel[F, Int, ByteVector] =
     unsafeChunkR(is).map(f => (n: Int) =>
-      MonadAsync[F].monad.map(f(new Array[Byte](n)))(ByteVector.view))
+      MonadSuspend[F].monad.map(f(new Array[Byte](n)))(ByteVector.view))
 
-  private def unsafeChunkR[F[_]: MonadAsync: Catchable](is: => InputStream): Channel[F, Array[Byte], Array[Byte]] = {
-    implicit val monad = MonadAsync[F].monad
-    resource(lazyReference(attempt(is)))(
+  private def unsafeChunkR[F[_]: MonadSuspend: Catchable](is: => InputStream): Channel[F, Array[Byte], Array[Byte]] = {
+    implicit val monad = MonadSuspend[F].monad
+    resource(attempt(is))(
       src => attempt(src.close())
     ) { src =>
-        MonadAsync[F].now { (buf: Array[Byte]) =>
+        MonadSuspend[F].now { (buf: Array[Byte]) =>
           val m = src.read(buf)
           if (m == buf.length) {
             buf.now
@@ -209,22 +208,29 @@ package object file {
   private def lazyReference[F[_]: MonadAsync: Monad: Catchable, A](fa: F[A]): F[A] =
     Atomic.synchronized[F, A].getOrSet(fa)
 
-  private def attempt[F[_]: MonadAsync: Monad: Catchable, A](a: => A): F[A] =
-    MonadAsync[F].suspend(tryCatch(a))
+  private def attempt[F[_]: MonadSuspend: Monad: Catchable, A](a: => A): F[A] =
+    MonadSuspend[F].suspend(tryCatch(a))
 
   private object Attachment
+
+  def resource[F[_], R, O](acquire: F[R])(release: R => F[Unit])(step: R => F[O]): Process[F, O] =
+    bracket(acquire)(r => eval_(release(r))) {
+      r =>
+        def oneStep: Process[F, O] = eval(step(r)).append[F, O](oneStep)
+        oneStep
+    } onHalt { _.asHalt }
 
   def asyncChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
     implicit val monad = MonadAsync[F].monad
     val pos = new AtomicLong(if (append) Files.size(f) else 0)
     resource(
-      lazyReference(attempt {
+      attempt {
         AsynchronousFileChannel.open(f, StandardOpenOption.CREATE, StandardOpenOption.WRITE, if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING)
-      })
+      }
     )(
         src => attempt { src.close() }
       )(src =>
-          MonadAsync[F].now { (bv: ByteVector) =>
+          MonadSuspend[F].now { (bv: ByteVector) =>
             val buff = bv.toByteBuffer
             MonadAsync[F].async[Throwable \/ Unit] { cb: (Throwable \/ Unit => Unit) =>
               def go(): Unit = {
@@ -246,21 +252,21 @@ package object file {
           })
   }
 
-  def fileChunkW[F[_]: MonadAsync: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
-    implicit val monad = MonadAsync[F].monad
+  def fileChunkW[F[_]: MonadSuspend: Catchable](f: Path, append: Boolean = false): Sink[F, ByteVector] = {
+    implicit val monad = MonadSuspend[F].monad
     resource(
-      lazyReference(attempt {
+      attempt {
         Files.newByteChannel(
           f,
           StandardOpenOption.CREATE,
           StandardOpenOption.WRITE,
           if (append) StandardOpenOption.APPEND else StandardOpenOption.TRUNCATE_EXISTING
         )
-      })
+      }
     )(
         src => attempt { src.close() }
       )(
-          src => MonadAsync[F].now((bv: ByteVector) => attempt {
+          src => MonadSuspend[F].now((bv: ByteVector) => attempt {
             val buff = bv.toByteBuffer
             while (buff.hasRemaining) {
               src.write(buff)
