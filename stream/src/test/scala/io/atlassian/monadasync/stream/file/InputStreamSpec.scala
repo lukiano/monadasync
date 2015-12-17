@@ -29,7 +29,7 @@ abstract class InputStreamSpec extends ImmutableSpec with ByteVectorArbitraries 
       handles await                                                      $handlesAwait
       handles appended awaits                                            $handlesAppendedAwaits
       handles one append within an await                                 $handlesOneAppendWithinAnAwait
-      handles appends within awaits                                      handlesAppendsWithinAwaits //
+      handles appends within awaits                                      $handlesAppendsWithinAwaits
       invokes finalizers when terminated early                           $invokesFinalizersWhenTerminatedEarly
       safely read byte 255 as an Int                                     $safelyReadByte255AsAnInt
       provide a valid input stream                                       $providesValidInputStream
