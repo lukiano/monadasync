@@ -108,7 +108,7 @@ object MonadAsyncBuild extends Build {
       .settings(
         name := "monadasync-root"
       )
-      .aggregate(core, stream, twitter)
+      .aggregate(core, stream, twitter, cats, monix)
 
   lazy val core = project
     .in(file("core"))
@@ -156,6 +156,18 @@ object MonadAsyncBuild extends Build {
         , "org.scodec"        %% "scodec-scalaz"             % Version.scodecScalaz % "provided"
         , "org.scodec"        %% "scodec-stream"             % Version.scodecStream % "provided"
         , "commons-io"         % "commons-io"                % Version.commonsIO    % "test"
+      )
+    )
+
+  lazy val monix = project
+    .in(file("monix"))
+    .dependsOn(cats % "test->test;compile->compile")
+    .settings(Common.settings)
+    .settings(
+      name := "monadasync-monix",
+      libraryDependencies ++= Seq(
+          "org.spire-math"     %% "cats-core"                % Version.cats % "provided"
+        , "org.monifu"         %% "monifu"                   % "1.0"        % "provided"
       )
     )
 

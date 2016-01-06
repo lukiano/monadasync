@@ -1,12 +1,12 @@
 package monadasync
 
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.locks.{Lock, ReentrantReadWriteLock}
+import java.util.concurrent.locks.{ Lock, ReentrantReadWriteLock }
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
 
-import MonadSuspend._
+import MonadAsync.syntax._
 
 // Same as scalaz.concurrent.Timer, but applies to any MonadAsync
 case class Timer(timeoutTickMs: Long = Timer.defaultTimeoutMs, workerName: String = "TimeoutContextWorker") {

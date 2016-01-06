@@ -84,7 +84,6 @@ trait MonadSuspendFunctions {
     def now[F[_]](implicit MS: MonadSuspend[F]): F[A] =
       MS.now(a)
   }
-
 }
 
 class MonadSuspendOps[F[_], A](self: F[A])(implicit MS: MonadSuspend[F], M: Monad[F]) {

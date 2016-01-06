@@ -12,8 +12,8 @@ sealed trait Future[+A] {
 
   @tailrec
   private def step: DirectFuture[A] = this match {
-    case n @ Now(a)             => n
-    case Suspend(thunk)         => thunk.run.step
+    case n @ Now(a) => n
+    case Suspend(thunk) => thunk.run.step
     case a @ Async(onFinish, f) => a
   }
 
@@ -48,24 +48,23 @@ object Future {
   private case class Suspend[A](thunk: Trampoline[Future[A]]) extends Future[A]
   private case class Async[A, B](onFinish: (A => Trampoline[Unit]) => Unit, f: A => Trampoline[Future[B]]) extends DirectFuture[B]
 
-  implicit object instance extends Bimonad[Future] {
+  implicit object instance extends Bimonad[Future] with MonadAsync[Future] {
     def extract[A](fa: Future[A]): A = fa.run
     def coflatMap[A, B](fa: Future[A])(f: Future[A] => B): Future[B] = map(fa)(f compose pure)
     def pure[A](a: A): Future[A] = now(a)
     def flatMap[A, B](fa: Future[A])(f: A => Future[B]): Future[B] = {
       def loop(thunk: Future[A]): Future[B] = flatMap(thunk)(f)
       fa match {
-        case Now(a)             => Suspend(done(a) map f)
-        case Suspend(thunk)     => Suspend(thunk map loop)
+        case Now(a) => Suspend(done(a) map f)
+        case Suspend(thunk) => Suspend(thunk map loop)
         case Async(onFinish, g) => Async(onFinish, (a: Any) => g(a) map loop)
       }
     }
+    def now[A](a: A): Future[A] = Now(a)
+    def async[A](listen: Callback[A]): Future[A] = Async[A, A](cb => listen { a => cb(a).run }, a => done(now(a)))
+    def delay[A](a: => A): Future[A] = suspend(now(a))
+    def suspend[A](f: => Future[A]): Future[A] = Suspend(Trampoline.delay(f))
   }
-
-  def now[A](a: A): Future[A] = Now(a)
-  def async[A](listen: Callback[A]): Future[A] = Async[A, A](cb => listen { a => cb(a).run }, a => done(now(a)))
-  def delay[A](a: => A): Future[A] = suspend(now(a))
-  def suspend[A](f: => Future[A]): Future[A] = Suspend(Trampoline.delay(f))
 
   implicit class FutureOps[A](val fa: Future[A]) extends AnyVal {
     import syntax.flatMap._
