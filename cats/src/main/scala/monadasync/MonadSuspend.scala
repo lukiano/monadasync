@@ -1,6 +1,7 @@
 package monadasync
 
 import cats._
+import free.Trampoline
 
 trait MonadSuspend[F[_]] extends internal.MonadSuspend[F]
 
@@ -59,6 +60,15 @@ trait MonadSuspendInstances {
       Eval.always(a)
     override def suspend[A](fa: => Eval[A]): Eval[A] =
       Eval.defer(fa)
+  }
+
+  implicit object TrampolineMonadSuspend extends MonadSuspend[Trampoline] {
+    override def now[A](a: A): Trampoline[A] =
+      Trampoline.done(a)
+    override def delay[A](a: => A): Trampoline[A] =
+      Trampoline.delay(a)
+    override def suspend[A](fa: => Trampoline[A]): Trampoline[A] =
+      Trampoline.suspend(fa)
   }
 }
 

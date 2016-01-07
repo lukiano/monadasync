@@ -104,5 +104,4 @@ object ScalaFuture {
     new (Future ~> F) {
       def apply[A](f: Future[A]): F[A] = f.liftAsync[F]
     }
-
 }
