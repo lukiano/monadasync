@@ -70,6 +70,17 @@ trait MonadSuspendInstances {
     override def suspend[A](fa: => Trampoline[A]): Trampoline[A] =
       Trampoline.suspend(fa)
   }
+
+  // If it makes sense for such F ...
+  def fromMonad[F[_]](implicit M: Monad[F]): MonadSuspend[F] = new MonadSuspend[F] {
+    def now[A](a: A): F[A] =
+      M.pure(a)
+    def delay[A](a: => A): F[A] =
+      M.map(now(()))(_ => a)
+    override def suspend[A](fa: => F[A]): F[A] =
+      M.flatMap(now(()))(_ => fa)
+  }
+
 }
 
 class MonadSuspendOps[F[_], A](self: F[A])(implicit MS: MonadSuspend[F], M: Monad[F]) {

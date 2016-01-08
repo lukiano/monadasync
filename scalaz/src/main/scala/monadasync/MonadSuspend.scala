@@ -42,6 +42,16 @@ trait MonadSuspendInstances {
       Trampoline.suspend(fa)
   }
 
+  // If it makes sense for such F ... for instance IO
+  def fromMonad[F[_]: Monad]: MonadSuspend[F] = new MonadSuspend[F] {
+    def now[A](a: A): F[A] =
+      a.point[F]
+    def delay[A](a: => A): F[A] =
+      Monad[F].point(a)
+    override def suspend[A](fa: => F[A]): F[A] =
+      now(()) >> fa
+  }
+
   class MonadTransMonadSuspend[F[_]: MonadSuspend: Monad, G[_[_], _]: MonadTrans] extends MonadSuspend[λ[α => G[F, α]]] {
     final def delay[A](a: => A): G[F, A] =
       MonadSuspend[F].delay(a).liftM[G]

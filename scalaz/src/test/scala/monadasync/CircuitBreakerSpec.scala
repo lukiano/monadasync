@@ -1,4 +1,5 @@
 package monadasync
+
 import java.util.concurrent.{TimeUnit, CountDownLatch}
 
 import scala.concurrent.TimeoutException
@@ -138,7 +139,7 @@ abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] e
     ok
   }
 
-  private def now: Duration = System.nanoTime().nanos
+  private def now: Duration = Duration(System.nanoTime(), TimeUnit.NANOSECONDS)
 
   private def awaitCond(p: => Boolean, max: FiniteDuration = 1.minute, interval: FiniteDuration = 100.millis, message: String = "") = {
     val stop = now + max
