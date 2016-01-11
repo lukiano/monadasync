@@ -54,7 +54,7 @@ object MonadAsync extends MonadAsyncInstances {
       def liftAsync[F[_]](implicit MA: MonadAsync[F]): F[A] =
         f.callback.liftAsync[F]
     }
-    implicit def ScalazFutureTransformation[F[_]](implicit MA: MonadAsync[F]): Future ~> F =
+    implicit def FutureTransformation[F[_]](implicit MA: MonadAsync[F]): Future ~> F =
       new (Future ~> F) {
         def apply[A](f: Future[A]): F[A] = f.liftAsync[F]
       }
@@ -149,3 +149,19 @@ final class MonadAsyncOps[F[_]: MonadAsync: Monad: Catchable, A](self: F[A]) ext
     Timer.default.valueWait[F, Unit]((), t) >> self
   }
 }
+
+/**
+ * Some laws any MonadAsync implementation should obey.
+ */
+abstract class MonadAsyncLaws[F[_]: Monad: MonadAsync: Catchable] {
+  import cats.laws._
+  import MonadAsync.syntax._
+  implicit val pool = SameThreadExecutor
+  def asyncIsDelay[A](a: () => A): IsEq[F[A]] =
+    MonadAsync[F].delay(a()) <-> async[F, A](a())
+}
+
+object MonadAsyncLaws {
+  def monadAsyncLaw[F[_]: Monad: MonadAsync: Catchable]: MonadAsyncLaws[F] = new MonadAsyncLaws[F] {}
+}
+

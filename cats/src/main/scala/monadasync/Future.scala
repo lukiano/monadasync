@@ -7,6 +7,7 @@ import scala.annotation.tailrec
 import scala.concurrent.{ duration, SyncVar }
 import Trampoline.done
 
+// Until Cats gets their own
 sealed trait Future[+A] {
   import Future._
 

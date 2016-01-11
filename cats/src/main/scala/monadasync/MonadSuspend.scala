@@ -12,20 +12,6 @@ object MonadSuspend extends MonadSuspendInstances {
     implicit def toMonadSuspendOps[F[_]: MonadSuspend: Monad, A](v: F[A]): MonadSuspendOps[F, A] =
       new MonadSuspendOps[F, A](v)
   }
-
-  /**
-   * Some laws any MonadSuspend implementation should obey.
-   */
-  abstract class MonadSuspendLaw[F[_]: Monad](ms: MonadSuspend[F]) {
-    //    def nowIsPoint[A](a: A): IsEq[F[A]] =
-    //      ms.now(a) <-> a.point[F]
-    //    def delayIsMap[A](a: () => A)(implicit FEA: Equal[F[A]]): Boolean =
-    //      FEA.equal(ms.delay(a()), ms.now(()) as a())
-    //    def suspendIsDelayJoin[A](fa: F[A])(implicit FEA: Equal[F[A]]): Boolean =
-    //      FEA.equal(ms.delay(fa).join, ms.suspend(fa))
-  }
-
-  def monadSuspendLaw[F[_]: Monad](ms: MonadSuspend[F]): MonadSuspendLaw[F] = new MonadSuspendLaw[F](ms) {}
 }
 
 trait MonadSuspendFunctions {
@@ -84,4 +70,23 @@ trait MonadSuspendInstances {
 }
 
 class MonadSuspendOps[F[_], A](self: F[A])(implicit MS: MonadSuspend[F], M: Monad[F]) {
+}
+
+/**
+ * Some laws any MonadSuspend implementation should obey.
+ */
+abstract class MonadSuspendLaws[F[_]: Monad: MonadSuspend] {
+  import cats.syntax.functor._
+  import cats.syntax.flatMap._
+  import cats.laws._
+  def nowIsPoint[A](a: A): IsEq[F[A]] =
+    MonadSuspend[F].now(a) <-> Monad[F].pure(a)
+  def delayIsMap[A](a: () => A): IsEq[F[A]] =
+    MonadSuspend[F].delay(a()) <-> (MonadSuspend[F].now(()) as a())
+  def suspendIsDelayJoin[A](fa: F[A]): IsEq[F[A]] =
+    MonadSuspend[F].delay(fa).flatten <-> MonadSuspend[F].suspend(fa)
+}
+
+object MonadSuspendLaws {
+  def monadSuspendLaw[F[_]: Monad: MonadSuspend]: MonadSuspendLaws[F] = new MonadSuspendLaws[F] {}
 }

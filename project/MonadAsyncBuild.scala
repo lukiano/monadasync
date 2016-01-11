@@ -141,7 +141,7 @@ object MonadAsyncBuild extends Build {
         , "org.spire-math"        %% "cats-macros"           % Version.cats % "provided"
         , "org.spire-math"        %% "cats-free"             % Version.cats % "provided"
         , "org.spire-math"        %% "cats-state"            % Version.cats % "provided"
-        , "org.spire-math"        %% "cats-laws"             % Version.cats % "test"
+        , "org.spire-math"        %% "cats-laws"             % Version.cats % "provided"
         )
     )
 
