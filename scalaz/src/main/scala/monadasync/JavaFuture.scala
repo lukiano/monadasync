@@ -117,21 +117,28 @@ object JavaFuture {
   def completableFutureMonadAsync(executor: Executor): MonadAsync[CompletableFuture] = new MonadAsync[CompletableFuture] {
     override def async[A](listen: Callback[A]): CompletableFuture[A] = {
       val cf = new CompletableFuture[A]
-      listen { a =>
-        cf.complete(a)
-        ()
-      }
+      CompletableFuture.runAsync(new Runnable {
+        def run() =
+          listen { a =>
+            cf.complete(a)
+            ()
+          }
+      })
       cf
+    }
+
+    override def async[A](pool: Executor)(a: => A): CompletableFuture[A] = {
+      CompletableFuture.supplyAsync(new JSupplier[A] {
+        override def get(): A =
+          a
+      }, pool)
     }
 
     override def now[A](a: A): CompletableFuture[A] =
       CompletableFuture.completedFuture(a)
 
     override def delay[A](a: => A): CompletableFuture[A] =
-      CompletableFuture.supplyAsync(new JSupplier[A] {
-        override def get(): A =
-          a
-      }, executor)
+      async(executor)(a)
 
     override def suspend[A](a: => CompletableFuture[A]): CompletableFuture[A] =
       delay(a).thenCompose(JFunction.identity[CompletableFuture[A]]())

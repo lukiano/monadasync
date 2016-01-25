@@ -12,8 +12,9 @@ final class WithTimeout(timeout: Long) {
       result.set(test)
       latch.countDown()
     }
-    if (latch.await(timeout, TimeUnit.MILLISECONDS)) result.get()
-    else {
+    if (latch.await(timeout, TimeUnit.MILLISECONDS)) {
+      result.get()
+    } else {
       t.interrupt()
       sys.error("Timeout occured, possible deadlock.")
     }

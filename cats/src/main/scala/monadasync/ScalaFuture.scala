@@ -1,9 +1,11 @@
 package monadasync
 
+import java.util.concurrent.{ExecutorService, Executor}
+
 import cats.{ ~>, Monad }
 import cats.data.Xor
 
-import scala.concurrent.{ Future => SFuture, Promise, ExecutionContext }
+import scala.concurrent.{Future => SFuture, Promise, ExecutionContext}
 import scala.util.{ Failure, Success }
 
 object ScalaFuture {
@@ -15,23 +17,32 @@ object ScalaFuture {
 
   def scalaFutureMonadAsync(context: ExecutionContext): MonadAsync[SFuture] =
     new MonadAsync[SFuture] {
-      override def delay[A](a: => A) =
+      override def delay[A](a: => A): SFuture[A] =
         SFuture(a)(context)
 
-      override def suspend[A](a: => SFuture[A]) =
+      override def suspend[A](a: => SFuture[A]): SFuture[A] =
         delay(a).flatMap(identity)(context)
 
       override def now[A](a: A) =
         SFuture.successful(a)
 
-      override def async[A](listen: Callback[A]) = {
+      override def async[A](listen: Callback[A]): SFuture[A] = {
         val p = Promise[A]()
-        listen { a =>
-          p.success(a)
-          ()
+        delay {
+          listen { a =>
+            p.success(a)
+            ()
+          }
         }
         p.future
       }
+
+      override def async[A](pool: Executor)(a: => A): SFuture[A] =
+        SFuture(a)(pool match {
+          case ec: ExecutionContext => ec
+          case es: ExecutorService => ExecutionContext.fromExecutorService(es)
+          case e => ExecutionContext.fromExecutor(e)
+        })
     }
 
   implicit val ScalaFutureMonadAsync = scalaFutureMonadAsync(defaultContext)

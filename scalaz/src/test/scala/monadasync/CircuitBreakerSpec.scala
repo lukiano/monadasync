@@ -1,18 +1,13 @@
 package monadasync
 
-import java.util.concurrent.{TimeUnit, CountDownLatch}
+import java.util.concurrent.{ Executor, TimeUnit, CountDownLatch, TimeoutException }
 
-import scala.concurrent.TimeoutException
 import scala.concurrent.duration._
-import scalaz.{Catchable, Nondeterminism}
-import ScalaFuture._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scalaz.{ Catchable, Nondeterminism }
 import MonadAsync.syntax._
 
 import scala.reflect.ClassTag
-
-object ScalaFutureCircuitBreakerSpec extends CircuitBreakerSpec[scala.concurrent.Future] {
-  def run[A](f: scala.concurrent.Future[A]): A = scala.concurrent.Await.result(f, awaitTimeout)
-}
 
 abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] extends org.specs2.mutable.SpecificationWithJUnit {
 
@@ -23,9 +18,10 @@ abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] e
   "An asynchronous circuit breaker that is open" should {
     "throw exceptions when called before reset timeout" in {
       val breaker = longResetTimeoutCb()
-      breaker().withCircuitBreaker(fail(new TestException))
+      breaker().withCircuitBreaker(fail[String](new TestException))
       checkLatch(breaker.openLatch) and
         intercept[CircuitBreakerOpenException] { run(breaker().withCircuitBreaker(delay[F, String](sayHi))) }
+        true === true
     }
 
     "transition to half-open on reset timeout" in {
@@ -95,18 +91,17 @@ abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] e
     "increment failure count on callTimeout" in {
       val breaker = shortCallTimeoutCb()
 
-      val fut = breaker().withCircuitBreaker(delay[F, Any] {
-        Thread.sleep(150.millis.toMillis)
+      val fut = breaker().withCircuitBreaker(async[F, Any] {
+        Thread.sleep(200.millis.toMillis)
         throwException
       })
       checkLatch(breaker.openLatch)
       (breaker().currentFailureCount must_===(1)) and
-      // Since the timeout should have happend before the inner code finishes
+      // Since the timeout should have happened before the inner code finishes
       // we expect a timeout, not TestException
       intercept[TimeoutException] {
         run(fut)
       }
-
     }
   }
 
@@ -132,7 +127,7 @@ abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] e
 
   private def sayHi = "hi"
 
-  protected final val awaitTimeout = 2.seconds
+  protected final val awaitTimeoutMs = 2000
 
   private def checkLatch(latch: TestLatch) = {
     latch.check()
@@ -175,9 +170,18 @@ abstract class CircuitBreakerSpec[F[_]: MonadAsync: Nondeterminism: Catchable] e
     def reset(): Unit = latch = new CountDownLatch(count)
 
     def check(): Unit = {
-      val opened = latch.await(awaitTimeout.toNanos, TimeUnit.NANOSECONDS)
+      val opened = latch.await(awaitTimeoutMs.millis.toNanos, TimeUnit.NANOSECONDS)
       if (!opened) throw new TimeoutException(
-        "Timeout of %s" format awaitTimeout.toString)
+        "Timeout of %s" format awaitTimeoutMs.millis.toString)
     }
   }
 }
+
+import scala.concurrent.{ Await => SAwait, Future => SFuture }
+import ScalaFuture._
+object ScalaFutureCircuitBreakerSpec extends CircuitBreakerSpec[SFuture] {
+  def run[A](f: SFuture[A]): A = SAwait.result(f, awaitTimeoutMs.millis)
+}
+
+
+

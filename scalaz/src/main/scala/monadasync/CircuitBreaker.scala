@@ -192,9 +192,10 @@ case class CircuitBreaker[F[_]: MonadAsync: Catchable: Nondeterminism](maxFailur
     protected def notifyTransitionListeners(): F[Unit] =
       if (hasListeners) {
         val MAF = MonadAsync[F]
-        Nondeterminism[F].gatherUnordered(listeners.asScala.toList.map { run =>
-          MAF.delay(run)
-        }).void
+        Nondeterminism[F].gatherUnordered(listeners.asScala.map { run =>
+          MAF.delay { run() }
+        })
+        unit()
       } else {
         unit()
       }
@@ -412,6 +413,7 @@ case class CircuitBreaker[F[_]: MonadAsync: Catchable: Nondeterminism](maxFailur
     override def doEnter(): F[Unit] = {
       set(System.nanoTime())
       Timer.default.valueWait((), resetTimeout.toMillis) >> { attemptReset() }
+      unit()
     }
 
     /**

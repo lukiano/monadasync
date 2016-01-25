@@ -1,6 +1,6 @@
 package monadasync
 
-import java.util.concurrent.{ TimeUnit, ScheduledExecutorService, Executor }
+import java.util.concurrent.{ExecutorService, TimeUnit, ScheduledExecutorService, Executor}
 
 import scala.concurrent.duration.Duration
 import cats._
@@ -79,6 +79,8 @@ trait MonadAsyncInstances {
       XorT(MonadAsync[F].delay(a.right))
     override def suspend[A](fa: => XorT[F, L, A]): XorT[F, L, A] =
       XorT(MonadAsync[F].suspend(fa.value))
+    override def async[A](pool: Executor)(a: => A): XorT[F, L, A] =
+      XorT(MonadAsync[F].async(pool)(a) map Xor.right)
   }
 }
 
@@ -105,7 +107,7 @@ trait MonadAsyncFunctions extends MonadSuspendFunctions {
   def callback[F[_], A](cb: Callback[A])(implicit MA: MonadAsync[F]): F[A] =
     MA.async(cb)
 
-  def async[F[_]: Monad: MonadAsync: Catchable, A](a: => A)(implicit pool: Executor): F[A] =
+  def async[F[_], A](a: => A)(implicit MA: MonadAsync[F], C: Catchable[F], pool: Executor): F[A] =
     callback({ cb: (Throwable Xor A => Unit) =>
       try {
         pool.execute(new Runnable { def run() = cb(Xor.catchNonFatal(a)) })

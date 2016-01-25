@@ -18,7 +18,7 @@ case class Timer(timeoutTickMs: Long = Timer.defaultTimeoutMs, workerName: Strin
   type FuturesMap = SortedMap[Instant, List[() => Unit]]
   private[this] val continueRunning = new AtomicBoolean(true)
   @volatile private[this] var lastNow: Instant = alignTimeResolution(System.currentTimeMillis)
-  private[this] val lock = new ReentrantReadWriteLock()
+  private[this] val fairLock = new ReentrantReadWriteLock(true)
   private[this] var futures: FuturesMap = SortedMap()
   private[this] val workerRunnable = new Runnable() {
     def run() {
@@ -62,10 +62,10 @@ case class Timer(timeoutTickMs: Long = Timer.defaultTimeoutMs, workerName: Strin
     }
 
   private[this] def withWrite[A](expression: => A): A =
-    withLock(lock.writeLock(), expression)
+    withLock(fairLock.writeLock(), expression)
 
   private[this] def withRead[A](expression: => A): A =
-    withLock(lock.readLock(), expression)
+    withLock(fairLock.readLock(), expression)
 
   private[this] def withLock[A](l: Lock, expression: => A): A = {
     l.lock()
@@ -91,11 +91,12 @@ case class Timer(timeoutTickMs: Long = Timer.defaultTimeoutMs, workerName: Strin
           }
           futures = futures + newEntry
         }
-        listen.liftAsync[F]
+        listen
       } else {
-        value.now[F]
+        val immediate: Callback[A] = callback => callback(value)
+        immediate
       }
-    }
+    }.liftAsync[F]
 
   def withTimeout[F[_]: MonadAsync: Nondeterminism, A](f: F[A], timeout: Long): F[Timeout \/ A] =
     Nondeterminism[F].choose(valueWait(Timeout(), timeout), f) map (_.bimap(_._1, _._2))

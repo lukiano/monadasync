@@ -1,14 +1,20 @@
 package monadasync
-import scalaz.concurrent.Future
+
+import scalaz.{ Catchable, Monad, Nondeterminism }
+import scalaz.concurrent.Task
 import scalaz.syntax.either._
 
-// borrowed from scalaz concurrent tests
-object TimerSpec extends org.specs2.mutable.SpecificationWithJUnit {
+import scala.concurrent.ExecutionContext.Implicits.global
 
-  import MonadAsync.FutureMonadAsync
+// borrowed from scalaz concurrent tests
+abstract class TimerSpec[F[_]: MonadAsync: Monad: Catchable: Nondeterminism] extends org.specs2.mutable.SpecificationWithJUnit {
+
+  import MonadAsync.syntax._
+
+  def run[A](f: F[A]): A
 
   def withTimer[T](expression: Timer => T): T = {
-    val timer = Timer(10)
+    val timer = Timer(timeoutTickMs = 10)
     try {
       expression(timer)
     } finally {
@@ -18,7 +24,7 @@ object TimerSpec extends org.specs2.mutable.SpecificationWithJUnit {
 
   "Timer" should {
     "stop normally".in {
-      withTimer { timer => ok }
+      withTimer { _ => ok }
     }
     "handle stop being called repeatedly" in {
       withTimer { timer =>
@@ -30,26 +36,38 @@ object TimerSpec extends org.specs2.mutable.SpecificationWithJUnit {
       withTimer { timer =>
         val start = System.currentTimeMillis
         WithTimeout(5000) {
-          val future = timer.valueWait[Future, String]("Test", 100)
-          (future.run === "Test") and ((System.currentTimeMillis - start) >= 100)
+          val future = timer.valueWait[F, String]("Test", 100)
+          (run(future) === "Test") and ((System.currentTimeMillis - start) >= 100)
         }
       }
     }
     "withTimeout(Future...) produces a Timeout if the timeout is exceeded" in {
       withTimer { timer =>
-        val future = timer.withTimeout(Future { Thread.sleep(500); "Test" }, 100)
+        val future = timer.withTimeout(async { Thread.sleep(500); "Test" }, 100)
         WithTimeout(5000) {
-          future.run must_== Timeout().left
+          run(future) must_== Timeout().left
         }
       }
     }
     "produces the result of the Future if the timeout is not exceeded" in {
       withTimer { timer =>
-        val future = timer.withTimeout(Future { Thread.sleep(100); "Test" }, 500)
+        val future = timer.withTimeout(async { Thread.sleep(100); "Test" }, 500)
         WithTimeout(5000) {
-          future.run must_== "Test".right
+          run(future) must_== "Test".right
         }
       }
     }
   }
+}
+
+import MonadAsync.TaskMonadAsync
+object TaskTimerSpec extends TimerSpec[Task] {
+  def run[A](f: Task[A]): A = f.run
+}
+
+import ScalaFuture._
+import scala.concurrent.{ Await => SAwait, Future => SFuture, duration }
+import duration._
+object ScalaFutureTimerSpec extends TimerSpec[SFuture] {
+  def run[A](f: SFuture[A]): A = SAwait.result(f, 1000 millis)
 }

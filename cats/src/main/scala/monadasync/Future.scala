@@ -1,10 +1,12 @@
 package monadasync
 
-import _root_.cats._
+import java.util.concurrent.Executor
+
+import cats._
 import free.Trampoline
 import std.function.function0Instance
 import scala.annotation.tailrec
-import scala.concurrent.{ duration, SyncVar }
+import scala.concurrent.duration
 import Trampoline.done
 
 // Until Cats gets their own
@@ -31,15 +33,6 @@ sealed trait Future[+A] {
 
   /** Run this computation to obtain an `A`, then invoke the given callback. */
   final val runAsync: Callback[A] = listen
-
-  /** Run this `Future` and block awaiting its result. */
-  final def run: A = this.step match {
-    case Now(a) => a
-    case as @ Async(_, _) =>
-      val sync = new SyncVar[A]
-      as listen sync.put
-      sync.take()
-  }
 }
 
 object Future {
@@ -49,9 +42,7 @@ object Future {
   private case class Suspend[A](thunk: Trampoline[Future[A]]) extends Future[A]
   private case class Async[A, B](onFinish: (A => Trampoline[Unit]) => Unit, f: A => Trampoline[Future[B]]) extends DirectFuture[B]
 
-  implicit object instance extends Bimonad[Future] with MonadAsync[Future] {
-    def extract[A](fa: Future[A]): A = fa.run
-    def coflatMap[A, B](fa: Future[A])(f: Future[A] => B): Future[B] = map(fa)(f compose pure)
+  implicit object instance extends Monad[Future] with MonadAsync[Future] {
     def pure[A](a: A): Future[A] = now(a)
     def flatMap[A, B](fa: Future[A])(f: A => Future[B]): Future[B] = {
       def loop(thunk: Future[A]): Future[B] = flatMap(thunk)(f)
@@ -65,6 +56,10 @@ object Future {
     def async[A](listen: Callback[A]): Future[A] = Async[A, A](cb => listen { a => cb(a).run }, a => done(now(a)))
     def delay[A](a: => A): Future[A] = suspend(now(a))
     def suspend[A](f: => Future[A]): Future[A] = Suspend(Trampoline.delay(f))
+    def async[A](pool: Executor)(a: => A): Future[A] =
+      async({ cb: (A => Unit) =>
+        pool.execute(new Runnable { def run() = cb(a) })
+      })
   }
 
   implicit class FutureOps[A](val fa: Future[A]) extends AnyVal {

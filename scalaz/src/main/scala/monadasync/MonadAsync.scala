@@ -127,14 +127,7 @@ trait MonadAsyncFunctions extends MonadSuspendFunctions {
     MA.async(cb)
 
   def async[F[_]: Monad: MonadAsync: Catchable, A](a: => A)(implicit pool: Executor): F[A] =
-    callback({ cb: (Throwable \/ A => Unit) =>
-      try {
-        pool.execute(new Runnable { def run() = cb(Task.Try(a)) })
-        ()
-      } catch {
-        case t: Throwable => cb(-\/(t))
-      }
-    }).unattempt
+    MonadAsync[F].async(pool)(Task.Try(a)).unattempt
 }
 
 trait MonadAsyncInstances {
@@ -149,6 +142,14 @@ trait MonadAsyncInstances {
       Future.now(a)
     override def suspend[A](fa: => Future[A]): Future[A] =
       Future.suspend(fa)
+    def async[A](pool: Executor)(a: => A): Future[A] =
+      async { (cb: A => Unit) =>
+        pool.execute {
+          new Runnable {
+            def run() = cb(a)
+          }
+        }
+      }
   }
 
   implicit object TaskMonadAsync extends MonadAsync[Task] {
@@ -160,6 +161,16 @@ trait MonadAsyncInstances {
       Task.now(a)
     override def suspend[A](ta: => Task[A]): Task[A] =
       Task.suspend(ta)
+    def async[A](pool: Executor)(a: => A): Task[A] =
+      Task.async { cb =>
+        Task.Try {
+          pool.execute {
+            new Runnable {
+              def run() = cb(Task.Try(a))
+            }
+          }
+        } fold ({ t => cb(-\/(t)) }, identity)
+      }
   }
 
   class MonadTransMonadAsync[F[_]: MonadAsync: Monad, G[_[_], _]: MonadTrans] extends MonadAsync[λ[α => G[F, α]]] {
@@ -171,6 +182,8 @@ trait MonadAsyncInstances {
       MonadTrans[G].apply[F].join(MonadAsync[F].delay(a).liftM[G])
     final def async[A](listen: Callback[A]): G[F, A] =
       listen.liftAsync[F].liftM[G]
+    final def async[A](pool: Executor)(a: => A): G[F, A] =
+      MonadAsync[F].async(pool)(a).liftM[G]
   }
 
   def tripleMonadTransMonadAsync[F[_], Q, H[_[_], _, _]](implicit MA: MonadAsync[F], M: Monad[F], MT: MonadTrans[λ[(Φ[_], α) => H[Φ, Q, α]]]) =

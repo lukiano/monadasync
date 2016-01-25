@@ -1,7 +1,7 @@
 package monadasync
 
 import java.util.NoSuchElementException
-import java.util.concurrent.Executor
+import java.util.concurrent.{ ExecutorService, Executor }
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{ Await, Promise, Future, ExecutionContext }
@@ -60,23 +60,32 @@ object ScalaFuture {
       override def zip[A, B](a: => Future[A], b: => Future[B]): Future[(A, B)] =
         a zip b
 
-      override def delay[A](a: => A) =
+      override def delay[A](a: => A): Future[A] =
         Future(a)(context)
 
-      override def suspend[A](a: => Future[A]) =
+      override def suspend[A](a: => Future[A]): Future[A] =
         monad.bind(Future(a)(context))(identity)
 
-      override def now[A](a: A) =
+      override def now[A](a: A): Future[A] =
         Future.successful(a)
 
-      override def async[A](listen: Callback[A]) = {
+      override def async[A](listen: Callback[A]): Future[A] = {
         val p = Promise[A]()
-        listen { a =>
-          p.success(a)
-          ()
+        delay {
+          listen { a =>
+            p.success(a)
+            ()
+          }
         }
         p.future
       }
+
+      override def async[A](pool: Executor)(a: => A): Future[A] =
+        Future(a)(pool match {
+          case ec: ExecutionContext => ec
+          case es: ExecutorService => ExecutionContext.fromExecutorService(es)
+          case e => ExecutionContext.fromExecutor(e)
+        })
 
       override def attempt[A](f: Future[A]): Future[Throwable \/ A] =
         f.map({ a => \/-(a) })(context).recover({ case t => -\/(t) })(context)

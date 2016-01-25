@@ -1,8 +1,11 @@
 package monadasync
 
+import java.util
+import java.util.concurrent._
+
+import com.twitter.util.Future
 import com.twitter.util._
 
-import scalaz._
 import scalaz._
 import scalaz.syntax.all._
 
@@ -70,7 +73,22 @@ package object twitter {
      * @return an F whose value will be set from an asynchronous computation, via callback.
      */
     override def async[A](listen: Callback[A]): Future[A] =
-      new Promise[A] <| { p => listen(p.setValue) }
+      new Promise[A] <| { p => delay(listen(p.setValue)) }
+
+    override def async[A](pool: Executor)(a: => A): Future[A] =
+      pool match {
+        case es: ExecutorService => FuturePool.interruptible(es).apply(a)
+        case e => FuturePool.interruptible(ExecutorServiceFromExecutor(e)).apply(a)
+      }
+
+    private case class ExecutorServiceFromExecutor(e: Executor) extends AbstractExecutorService {
+      override def shutdown(): Unit = ()
+      override def isTerminated: Boolean = false
+      override def awaitTermination(timeout: Long, unit: TimeUnit): Boolean = false
+      override def shutdownNow(): util.List[Runnable] = util.Collections.emptyList()
+      override def isShutdown: Boolean = false
+      override def execute(command: Runnable): Unit = e.execute(command)
+    }
 
     override def now[A](a: A): Future[A] =
       value(a)

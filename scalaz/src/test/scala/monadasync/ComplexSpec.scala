@@ -3,6 +3,7 @@ import scalaz._
 import scalaz.scalacheck.ScalazProperties
 import scalaz.std.anyVal._
 import scalaz.concurrent.Future
+import scalaz.concurrent.Task
 import Future._
 import MonadAsync._
 import Nondeterminisms._

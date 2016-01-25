@@ -2,10 +2,10 @@ package monadasync
 
 import java.util.concurrent.Executor
 
+import cats.data.Xor
 import org.scalacheck.{ Gen, Arbitrary }
 import cats.{ Monad, Eq }
 import org.scalacheck.Prop.forAll
-import org.specs2.specification.core.Env
 import scala.concurrent.{ Future => SFuture }
 import ScalaFuture._
 
@@ -25,13 +25,13 @@ object MonadAsyncInstancesTests {
     new MonadAsyncInstancesTests[F](MonadAsyncLaws.monadAsyncLaw[F], MonadSuspendLaws.monadSuspendLaw[F]) {}
 }
 
-abstract class MonadAsyncSpec[F[_]: MonadAsync: Monad: Catchable](e: Env) extends Spec {
+abstract class MonadAsyncSpec[F[_]: MonadAsync: Monad: Catchable] extends Spec {
 
   def run[A](f: F[A]): A
 
   def name: String
 
-  implicit val pool: Executor = e.executorService
+  implicit val pool: Executor = scala.concurrent.ExecutionContext.global
 
   implicit def arbitraryTC(implicit a: Arbitrary[Int]): Arbitrary[F[Int]] = Arbitrary {
     import MonadAsync.syntax._
@@ -51,12 +51,17 @@ abstract class MonadAsyncSpec[F[_]: MonadAsync: Monad: Catchable](e: Env) extend
   checkAll(name, MonadAsyncInstancesTests[F].monadAsync[Int])
 }
 
-class TaskSpec(implicit e: Env) extends MonadAsyncSpec[Task](e) {
+class TaskSpec extends MonadAsyncSpec[Task] {
+  import scala.concurrent.SyncVar
   def name = "Task"
-  def run[A](f: Task[A]) = f.value.run.toOption.get
+  def run[A](f: Task[A]) = {
+    val sync = new SyncVar[Throwable Xor A]
+    f.value.runAsync(sync.put)
+    sync.take().fold({t => throw t}, identity)
+  }
 }
 
-class ScalaFutureSpec(implicit e: Env) extends MonadAsyncSpec[SFuture](e) {
+class ScalaFutureSpec extends MonadAsyncSpec[SFuture] {
   import scala.concurrent.Await
   import scala.concurrent.duration._
 
